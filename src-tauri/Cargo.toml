@@ -29,6 +29,7 @@ walkdir = "2.5.0"
 notify = "8.2.0"
 rodio = { version = "0.22.2", default-features = false, features = ["playback"] }
 tauri-plugin-dialog = "2.7.2"
+rand = "0.10.2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

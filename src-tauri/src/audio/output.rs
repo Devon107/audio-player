@@ -1,24 +1,50 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
 use rodio::{DeviceSinkBuilder, Player};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 
 use super::decoder::TrackDecoder;
+use super::queue::{QueueState, QueueTrack, QueueTrackInput, RepeatMode};
 
 /// Intervalo al que se emite el progreso de reproducción y se revisa si la pista terminó.
 const TICK_INTERVAL: Duration = Duration::from_millis(250);
 
 pub enum AudioCommand {
-    Load { path: PathBuf, autoplay: bool },
+    /// Carga un archivo suelto y lo reproduce, sin pasar por la cola (vacía la cola actual).
+    Load {
+        path: PathBuf,
+        autoplay: bool,
+    },
     Play,
     Pause,
     Stop,
     Seek(Duration),
     SetVolume(f32),
+
+    /// Reemplaza toda la cola y, si se indica `start_index`, empieza a reproducir desde ahí (si
+    /// no, empieza desde el principio según el modo aleatorio/secuencial).
+    SetQueue {
+        items: Vec<QueueTrackInput>,
+        start_index: Option<usize>,
+        autoplay: bool,
+    },
+    AddToQueue(Vec<QueueTrackInput>),
+    RemoveFromQueue(u64),
+    ReorderQueue {
+        item_id: u64,
+        new_index: usize,
+    },
+    ClearQueue,
+    PlayQueueItem(u64),
+    NextTrack,
+    PreviousTrack,
+    SetShuffle(bool),
+    SetRepeatMode(RepeatMode),
+    GetQueueState(mpsc::Sender<QueueSnapshot>),
 }
 
 #[derive(Clone, Serialize)]
@@ -32,13 +58,32 @@ struct LoadedPayload {
     duration_secs: Option<f64>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct QueueSnapshot {
+    items: Vec<QueueTrack>,
+    current_id: Option<u64>,
+    shuffle: bool,
+    repeat: RepeatMode,
+}
+
+fn queue_snapshot(queue: &QueueState) -> QueueSnapshot {
+    QueueSnapshot {
+        items: queue.items().to_vec(),
+        current_id: queue.current_id(),
+        shuffle: queue.shuffle(),
+        repeat: queue.repeat(),
+    }
+}
+
 /// Asa liviana (clonable vía `State`) para enviar comandos al hilo dedicado de audio.
 pub struct AudioEngineHandle {
     tx: mpsc::Sender<AudioCommand>,
 }
 
 impl AudioEngineHandle {
-    pub fn spawn(app: AppHandle) -> Self {
+    /// Genérico sobre `R: Runtime` para poder probarse con `tauri::test::mock_app()`, que usa
+    /// `MockRuntime` en lugar del runtime `Wry` por defecto.
+    pub fn spawn<R: Runtime + 'static>(app: AppHandle<R>) -> Self {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || run_engine(rx, app));
         Self { tx }
@@ -51,10 +96,51 @@ impl AudioEngineHandle {
     }
 }
 
+/// Intenta cargar y reproducir `path`. Devuelve la duración reportada si tuvo éxito.
+fn load_and_play(player: &Player, path: &Path, autoplay: bool) -> Result<Option<Duration>, String> {
+    let decoder = TrackDecoder::open(path)?;
+    let duration = decoder.total_duration_hint();
+    player.clear();
+    player.append(decoder);
+    if autoplay {
+        player.play();
+    } else {
+        player.pause();
+    }
+    Ok(duration)
+}
+
+/// Aplica el resultado de `load_and_play` al estado local del motor y emite el evento
+/// correspondiente (`player://loaded` o `player://error`).
+fn handle_load_result<R: Runtime>(
+    result: Result<Option<Duration>, String>,
+    app: &AppHandle<R>,
+    duration: &mut Option<Duration>,
+    has_track: &mut bool,
+) {
+    match result {
+        Ok(dur) => {
+            *duration = dur;
+            *has_track = true;
+            let _ = app.emit(
+                "player://loaded",
+                LoadedPayload {
+                    duration_secs: dur.map(|d| d.as_secs_f64()),
+                },
+            );
+        }
+        Err(e) => {
+            *has_track = false;
+            *duration = None;
+            let _ = app.emit("player://error", e);
+        }
+    }
+}
+
 /// Bucle principal del motor de audio. Vive en su propio hilo del sistema operativo porque el
 /// `cpal::Stream` que mantiene abierto el dispositivo de salida no es `Send`/`Sync` en todas las
 /// plataformas, por lo que no puede vivir directamente en el estado gestionado por Tauri.
-fn run_engine(rx: mpsc::Receiver<AudioCommand>, app: AppHandle) {
+fn run_engine<R: Runtime>(rx: mpsc::Receiver<AudioCommand>, app: AppHandle<R>) {
     let sink_handle = match DeviceSinkBuilder::open_default_sink() {
         Ok(handle) => handle,
         Err(e) => {
@@ -69,35 +155,42 @@ fn run_engine(rx: mpsc::Receiver<AudioCommand>, app: AppHandle) {
     let player = Player::connect_new(sink_handle.mixer());
     let mut duration: Option<Duration> = None;
     let mut has_track = false;
+    let mut queue = QueueState::default();
 
-    loop {
-        match rx.recv_timeout(TICK_INTERVAL) {
-            Ok(AudioCommand::Load { path, autoplay }) => match TrackDecoder::open(&path) {
-                Ok(decoder) => {
-                    duration = decoder.total_duration_hint();
-                    player.clear();
-                    player.append(decoder);
-                    has_track = true;
-
-                    if autoplay {
-                        player.play();
-                    } else {
-                        player.pause();
-                    }
-
-                    let _ = app.emit(
-                        "player://loaded",
-                        LoadedPayload {
-                            duration_secs: duration.map(|d| d.as_secs_f64()),
-                        },
-                    );
-                }
-                Err(e) => {
+    // Aplica el resultado de avanzar/retroceder/saltar en la cola (o detiene la reproducción si
+    // `$track` es `None`, es decir, no queda nada por reproducir).
+    macro_rules! apply_track {
+        ($track:expr) => {
+            match $track {
+                Some(track) => handle_load_result(
+                    load_and_play(&player, Path::new(&track.path), true),
+                    &app,
+                    &mut duration,
+                    &mut has_track,
+                ),
+                None => {
+                    player.stop();
                     has_track = false;
                     duration = None;
-                    let _ = app.emit("player://error", e);
                 }
-            },
+            }
+        };
+    }
+
+    loop {
+        let mut queue_changed = false;
+
+        match rx.recv_timeout(TICK_INTERVAL) {
+            Ok(AudioCommand::Load { path, autoplay }) => {
+                queue.clear();
+                queue_changed = true;
+                handle_load_result(
+                    load_and_play(&player, &path, autoplay),
+                    &app,
+                    &mut duration,
+                    &mut has_track,
+                );
+            }
             Ok(AudioCommand::Play) => player.play(),
             Ok(AudioCommand::Pause) => player.pause(),
             Ok(AudioCommand::Stop) => {
@@ -114,6 +207,77 @@ fn run_engine(rx: mpsc::Receiver<AudioCommand>, app: AppHandle) {
                 }
             }
             Ok(AudioCommand::SetVolume(volume)) => player.set_volume(volume.clamp(0.0, 2.0)),
+
+            Ok(AudioCommand::SetQueue {
+                items,
+                start_index,
+                autoplay,
+            }) => {
+                queue.set_items(items);
+                queue_changed = true;
+
+                let start_track = start_index
+                    .and_then(|i| queue.items().get(i).cloned())
+                    .and_then(|track| queue.play_item(track.id))
+                    .or_else(|| queue.next());
+
+                match start_track {
+                    Some(track) => handle_load_result(
+                        load_and_play(&player, Path::new(&track.path), autoplay),
+                        &app,
+                        &mut duration,
+                        &mut has_track,
+                    ),
+                    None => {
+                        player.stop();
+                        has_track = false;
+                        duration = None;
+                    }
+                }
+            }
+            Ok(AudioCommand::AddToQueue(items)) => {
+                queue.add_items(items);
+                queue_changed = true;
+            }
+            Ok(AudioCommand::RemoveFromQueue(item_id)) => {
+                queue.remove(item_id);
+                queue_changed = true;
+            }
+            Ok(AudioCommand::ReorderQueue { item_id, new_index }) => {
+                queue.reorder(item_id, new_index);
+                queue_changed = true;
+            }
+            Ok(AudioCommand::ClearQueue) => {
+                queue.clear();
+                queue_changed = true;
+                player.stop();
+                has_track = false;
+                duration = None;
+            }
+            Ok(AudioCommand::PlayQueueItem(item_id)) => {
+                queue_changed = true;
+                apply_track!(queue.play_item(item_id));
+            }
+            Ok(AudioCommand::NextTrack) => {
+                queue_changed = true;
+                apply_track!(queue.next());
+            }
+            Ok(AudioCommand::PreviousTrack) => {
+                queue_changed = true;
+                apply_track!(queue.previous());
+            }
+            Ok(AudioCommand::SetShuffle(enabled)) => {
+                queue.set_shuffle(enabled);
+                queue_changed = true;
+            }
+            Ok(AudioCommand::SetRepeatMode(mode)) => {
+                queue.set_repeat(mode);
+                queue_changed = true;
+            }
+            Ok(AudioCommand::GetQueueState(reply)) => {
+                let _ = reply.send(queue_snapshot(&queue));
+            }
+
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
@@ -121,7 +285,14 @@ fn run_engine(rx: mpsc::Receiver<AudioCommand>, app: AppHandle) {
         if has_track {
             if player.empty() {
                 has_track = false;
-                let _ = app.emit("player://track-ended", ());
+                let next_track = queue.next();
+                if next_track.is_some() {
+                    queue_changed = true;
+                }
+                apply_track!(next_track);
+                if !has_track {
+                    let _ = app.emit("player://track-ended", ());
+                }
             } else {
                 let _ = app.emit(
                     "player://progress",
@@ -131,6 +302,10 @@ fn run_engine(rx: mpsc::Receiver<AudioCommand>, app: AppHandle) {
                     },
                 );
             }
+        }
+
+        if queue_changed {
+            let _ = app.emit("player://queue-changed", queue_snapshot(&queue));
         }
     }
 }
@@ -193,5 +368,79 @@ mod tests {
 
         player.stop();
         println!("Prueba de reproducción completada.");
+    }
+
+    fn queue_state(handle: &AudioEngineHandle) -> QueueSnapshot {
+        let (tx, rx) = mpsc::channel();
+        handle.send(AudioCommand::GetQueueState(tx)).unwrap();
+        rx.recv().unwrap()
+    }
+
+    /// Prueba de humo manual: arma una cola con 3 pistas cortas de prueba y verifica, contra el
+    /// motor real (dispositivo de audio real), que el avance automático al terminar una pista,
+    /// `next_track` y `previous_track` navegan la cola correctamente. Se ejecuta a propósito con
+    /// `cargo test -- --ignored --nocapture` porque depende de hardware de audio real y de
+    /// tiempos de reproducción reales (no es instantánea).
+    #[test]
+    #[ignore]
+    fn queue_auto_advances_and_supports_manual_navigation() {
+        let fixtures =
+            std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures"));
+        let path = |name: &str| fixtures.join(name).to_string_lossy().into_owned();
+
+        let app = tauri::test::mock_app();
+        let handle = AudioEngineHandle::spawn(app.handle().clone());
+
+        // Pista 1 dura ~2s, para que el avance automático a la pista 2 ocurra pronto.
+        let items = vec![
+            QueueTrackInput {
+                path: path("test-tone-no-tags.mp3"),
+                track_id: None,
+            },
+            QueueTrackInput {
+                path: path("test-tone-with-cover.mp3"),
+                track_id: None,
+            },
+            QueueTrackInput {
+                path: path("test-tone.mp3"),
+                track_id: None,
+            },
+        ];
+
+        handle
+            .send(AudioCommand::SetQueue {
+                items,
+                start_index: Some(0),
+                autoplay: true,
+            })
+            .unwrap();
+
+        sleep(Duration::from_millis(300));
+        let state = queue_state(&handle);
+        let [id1, id2, id3] = [state.items[0].id, state.items[1].id, state.items[2].id];
+        assert_eq!(state.current_id, Some(id1));
+        println!("Reproduciendo pista 1/3...");
+
+        sleep(Duration::from_millis(2300));
+        let state = queue_state(&handle);
+        assert_eq!(
+            state.current_id,
+            Some(id2),
+            "debería haber avanzado solo a la pista 2 al terminar la 1"
+        );
+        println!("Avance automático OK: ahora en pista 2/3.");
+
+        handle.send(AudioCommand::NextTrack).unwrap();
+        sleep(Duration::from_millis(300));
+        assert_eq!(queue_state(&handle).current_id, Some(id3));
+        println!("next_track OK: ahora en pista 3/3.");
+
+        handle.send(AudioCommand::PreviousTrack).unwrap();
+        sleep(Duration::from_millis(300));
+        assert_eq!(queue_state(&handle).current_id, Some(id2));
+        println!("previous_track OK: volvió a la pista 2/3.");
+
+        handle.send(AudioCommand::Stop).unwrap();
+        println!("Prueba de cola completada.");
     }
 }

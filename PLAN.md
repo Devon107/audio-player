@@ -69,13 +69,16 @@ Backend completo ✅ — la parte de frontend (vista de biblioteca en React) que
 
 ## Fase 4 — Reproducción, cola, aleatorio y repetición
 
-- [ ] Implementar estado de "cola de reproducción" (queue) en backend o frontend (definir fuente de verdad)
-- [ ] Comandos: agregar a la cola, quitar de la cola, reordenar cola, reproducir pista específica de la cola
-- [ ] Implementar reproducción secuencial automática (siguiente pista al terminar la actual)
-- [ ] Implementar modo aleatorio (shuffle) — algoritmo de mezcla sin repetición hasta agotar la cola
-- [ ] Implementar modos de repetición: repetir pista actual, repetir cola completa, sin repetición
+Backend completo ✅ — igual que en fases anteriores, los botones de UI quedan pendientes para la pasada de frontend.
+
+- [x] Fuente de verdad: la cola vive en el backend (`audio::queue::QueueState`), dentro del mismo hilo dedicado del motor de audio (`audio::output`) que ya manejaba play/pause/stop/seek desde la Fase 1 — así el avance automático funciona sin depender de que el frontend esté escuchando
+- [x] Comandos Tauri: `set_queue` (reemplaza la cola y puede arrancar en un índice), `add_to_queue`, `remove_from_queue`, `reorder_queue`, `clear_queue`, `play_queue_item`, `get_queue_state`
+- [x] Reproducción secuencial automática: al vaciarse el `Player` (pista terminada), el motor llama a `queue.next()` y carga la siguiente sola, sin intervención del frontend
+- [x] Modo aleatorio: `QueueState` mantiene una "bolsa" (`shuffle_bag`) con los ids pendientes del ciclo actual, mezclada con `rand`; garantiza visitar cada pista una vez antes de repetir
+- [x] Modos de repetición: `RepeatMode::{Off, Track, Queue}` vía `set_repeat_mode`
+- [x] Historial de reproducción (`previous_track`) independiente del modo aleatorio/secuencial, saltando pistas que fueron removidas de la cola mientras tanto
 - [ ] Botones de control en UI: anterior, siguiente, play/pause, shuffle, repeat, barra de progreso (seek), volumen
-- [ ] Sincronizar estado de reproducción entre backend y frontend en tiempo real (eventos)
+- [x] Sincronización en tiempo real vía eventos Tauri: `player://loaded`, `player://progress`, `player://track-ended`, `player://queue-changed` (con el snapshot completo: ítems, pista actual, shuffle, repeat), `player://error`
 
 ## Fase 5 — Playlists
 
