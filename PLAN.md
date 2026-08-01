@@ -55,13 +55,15 @@
 
 ## Fase 3 — Biblioteca musical y base de datos
 
-- [ ] Diseñar esquema SQLite: tablas `tracks`, `albums`, `artists`, `genres`, `playlists`, `playlist_tracks`, `settings`
-- [ ] Implementar módulo `db` con `rusqlite` (conexión, migraciones iniciales)
-- [ ] Comando Tauri: seleccionar carpeta(s) local(es) mediante diálogo nativo (`tauri-plugin-dialog`)
-- [ ] Implementar escaneo recursivo de carpetas con `walkdir`, filtrando extensiones de audio soportadas
-- [ ] Insertar/actualizar pistas encontradas en la base de datos (con sus metadatos y ruta de carátula)
-- [ ] Implementar watcher con `notify` para detectar cambios en carpetas monitoreadas (archivos añadidos/eliminados) y refrescar biblioteca
-- [ ] Comandos Tauri para consultar biblioteca: listar pistas, filtrar por artista/álbum/género, búsqueda por texto
+Backend completo ✅ — la parte de frontend (vista de biblioteca en React) queda pendiente para cuando se aborde la UI (consistente con las Fases 0-2, que también fueron solo backend).
+
+- [x] Diseñar esquema SQLite: tablas `tracks`, `albums`, `artists`, `genres`, `playlists`, `playlist_tracks`, `settings`, y `watched_folders` (necesaria para persistir qué carpetas vigilar entre sesiones)
+- [x] Implementar módulo `db` con `rusqlite` (`db::connection::DbHandle` — conexión compartida vía `Arc<Mutex<Connection>>` — y aplicación del esquema en `db/schema.sql` vía `execute_batch`, idempotente con `CREATE TABLE IF NOT EXISTS`)
+- [x] Comando Tauri `pick_and_add_folder`: selecciona carpeta con diálogo nativo (`tauri-plugin-dialog`, invocado desde Rust, no desde JS) y dispara su escaneo inicial
+- [x] Escaneo recursivo con `walkdir` (`library::scanner`), filtrando por extensión (mp3, flac, ogg, wav, m4a, aac, mp4), con detección de cambios por tamaño+mtime para saltar archivos sin modificar en re-escaneos
+- [x] Insertar/actualizar pistas en la base de datos con metadatos (`lofty`) y ruta de carátula cacheada (`metadata::cover_cache`); get-or-create de artistas/álbumes/géneros, `ON CONFLICT` upsert por ruta
+- [x] Watcher con `notify` (`library::watcher::LibraryWatcherHandle`) corriendo en hilo dedicado, con debounce de 500ms para agrupar ráfagas de eventos, que agrega/actualiza/elimina pistas automáticamente y emite `library://updated`
+- [x] Comandos Tauri de consulta (`library::queries` + `library::commands`): `list_tracks` (con filtro por artista/álbum/género, búsqueda de texto y paginación limit/offset), `list_artists`, `list_albums`, `list_genres`, `list_watched_folders`, `remove_watched_folder`, `rescan_library`
 - [ ] Vista de biblioteca en frontend: lista de canciones, agrupación por álbum/artista/género
 - [ ] Manejo de biblioteca grande: paginación o virtualización de listas en frontend
 

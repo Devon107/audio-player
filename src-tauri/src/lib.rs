@@ -16,8 +16,31 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(audio::AudioEngineHandle::spawn(app.handle().clone()));
+
+            let db_handle = db::init(app.handle())?;
+
+            let watched_folders: Vec<std::path::PathBuf> = {
+                let conn = db_handle.lock();
+                let mut stmt = conn.prepare("SELECT path FROM watched_folders")?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+                    .into_iter()
+                    .map(std::path::PathBuf::from)
+                    .collect()
+            };
+
+            let watcher_handle = library::LibraryWatcherHandle::spawn(
+                app.handle().clone(),
+                db_handle.clone(),
+                watched_folders,
+            );
+
+            app.manage(db_handle);
+            app.manage(watcher_handle);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -30,6 +53,14 @@ pub fn run() {
             audio::commands::set_volume,
             metadata::commands::read_track_metadata,
             metadata::commands::get_cover_art,
+            library::commands::pick_and_add_folder,
+            library::commands::list_watched_folders,
+            library::commands::remove_watched_folder,
+            library::commands::rescan_library,
+            library::commands::list_tracks,
+            library::commands::list_artists,
+            library::commands::list_albums,
+            library::commands::list_genres,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

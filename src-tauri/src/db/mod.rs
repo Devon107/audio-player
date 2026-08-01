@@ -1,1 +1,3 @@
-// Conexión SQLite y migraciones (tracks, albums, artists, genres, playlists, settings).
+mod connection;
+
+pub use connection::{init, DbHandle};

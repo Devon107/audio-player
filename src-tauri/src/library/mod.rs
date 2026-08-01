@@ -1,1 +1,7 @@
-// Escaneo de carpetas locales, watcher de cambios y consultas de la biblioteca musical.
+pub mod commands;
+mod models;
+mod queries;
+pub mod scanner;
+mod watcher;
+
+pub use watcher::LibraryWatcherHandle;
