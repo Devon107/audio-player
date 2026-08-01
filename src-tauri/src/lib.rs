@@ -28,6 +28,8 @@ pub fn run() {
             audio::commands::stop,
             audio::commands::seek,
             audio::commands::set_volume,
+            metadata::commands::read_track_metadata,
+            metadata::commands::get_cover_art,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

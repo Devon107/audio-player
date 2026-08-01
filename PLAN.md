@@ -41,17 +41,17 @@
 - [x] Pruebas unitarias del decodificador con un MP3 de muestra generado con ffmpeg (`src-tauri/tests/fixtures/test-tone.mp3`): specs de stream, conteo de muestras, seek, archivo inexistente
 - [x] Prueba de humo manual (`cargo test -- --ignored`) que reproduce el tono por el dispositivo de audio real — confirmado audible por el usuario
 
-## Fase 2 — Lectura de metadatos y carátulas
+## Fase 2 — Lectura de metadatos y carátulas ✅
 
-- [ ] Implementar módulo `metadata::reader` usando `lofty` (o `symphonia::core::meta`) para extraer:
-  - [ ] Título
-  - [ ] Álbum
-  - [ ] Artista
-  - [ ] Género
-  - [ ] Año, número de pista, duración (datos adicionales)
-- [ ] Extraer imagen de carátula embebida (picture/APIC frame) y convertir a formato utilizable por el frontend (base64 o guardado en caché local)
-- [ ] Manejar archivos sin metadatos o con tags corruptos (valores por defecto: nombre de archivo, "Desconocido", etc.)
-- [ ] Cachear carátulas extraídas en disco (evitar re-extracción en cada escaneo)
+- [x] Implementar módulo `metadata::reader` usando `lofty` para extraer:
+  - [x] Título
+  - [x] Álbum
+  - [x] Artista
+  - [x] Género
+  - [x] Año, número de pista, duración (datos adicionales)
+- [x] Extraer imagen de carátula embebida (picture/APIC frame vía `lofty::picture`) — `metadata::reader::extract_cover_bytes`
+- [x] Manejar archivos sin metadatos o con tags corruptos: el título cae al nombre del archivo; el resto de campos quedan en `None` (sin texto placeholder codificado en el backend, para no romper el selector de idioma EN/ES — esa lógica de "Desconocido"/"Unknown" vive en el frontend con i18n)
+- [x] Cachear carátulas extraídas en disco (`metadata::cover_cache`, en `app_cache_dir()/covers/`, con clave por ruta+tamaño+mtime para invalidar si el archivo cambia)
 
 ## Fase 3 — Biblioteca musical y base de datos
 

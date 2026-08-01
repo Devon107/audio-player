@@ -1,1 +1,3 @@
-// Extracción de metadatos (título, álbum, artista, género) y carátulas embebidas.
+pub mod commands;
+mod cover_cache;
+mod reader;
