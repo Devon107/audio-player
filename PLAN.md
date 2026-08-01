@@ -29,16 +29,17 @@
 - [x] Añadir dependencias Rust iniciales al `Cargo.toml`: `symphonia`, `rodio`, `lofty`, `rusqlite`, `walkdir`, `notify`, `serde`
 - [x] Verificar compilación y arranque (`bun run tauri dev` compila 546 crates sin errores y ejecuta el binario)
 
-## Fase 1 — Motor de audio (backend Rust)
+## Fase 1 — Motor de audio (backend Rust) ✅
 
-- [ ] Implementar módulo `audio::decoder` usando `symphonia::core::probe` para abrir y detectar formato del archivo
-- [ ] Implementar decodificación de paquetes MP3 a buffers PCM
-- [ ] Implementar módulo `audio::output` con `rodio`/`cpal` para reproducir el stream PCM decodificado
-- [ ] Implementar controles básicos: play, pause, stop, seek (buscar posición)
-- [ ] Implementar control de volumen
-- [ ] Emitir eventos de progreso de reproducción (posición actual, duración) hacia el frontend vía Tauri events
-- [ ] Manejar fin de pista (evento `track_ended`) para disparar avance automático
-- [ ] Pruebas unitarias del decodificador con archivos MP3 de muestra
+- [x] Implementar módulo `audio::decoder` (`TrackDecoder`) usando `symphonia::core::formats::probe` para abrir y detectar formato del archivo
+- [x] Implementar decodificación de paquetes a buffers PCM interleaved `f32` (`GenericAudioBufferRef::copy_to_vec_interleaved`), expuesto como `rodio::Source`
+- [x] Implementar módulo `audio::output` con `rodio`/`cpal` (`DeviceSinkBuilder` + `Player`) corriendo en un hilo dedicado (el `cpal::Stream` no es `Send`/`Sync` en todas las plataformas)
+- [x] Implementar controles básicos: play, pause, stop, seek (`Source::try_seek` sobre el `FormatReader` de Symphonia)
+- [x] Implementar control de volumen (`Player::set_volume`)
+- [x] Emitir eventos de progreso de reproducción (`player://progress`, `player://loaded`) hacia el frontend vía Tauri events, cada 250ms
+- [x] Manejar fin de pista (evento `player://track-ended`) detectando cuando la cola de `Player` queda vacía
+- [x] Pruebas unitarias del decodificador con un MP3 de muestra generado con ffmpeg (`src-tauri/tests/fixtures/test-tone.mp3`): specs de stream, conteo de muestras, seek, archivo inexistente
+- [x] Prueba de humo manual (`cargo test -- --ignored`) que reproduce el tono por el dispositivo de audio real — confirmado audible por el usuario
 
 ## Fase 2 — Lectura de metadatos y carátulas
 

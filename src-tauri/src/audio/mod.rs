@@ -1,1 +1,5 @@
-// Decodificación (Symphonia) y salida de audio (rodio/cpal), control de reproducción.
+pub mod commands;
+mod decoder;
+mod output;
+
+pub use output::AudioEngineHandle;
