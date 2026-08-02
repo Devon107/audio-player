@@ -25,11 +25,14 @@ export function coverAssetUrl(coverPath: string | null | undefined): string | nu
 /// El backend aplica la ganancia de volumen linealmente (multiplica cada muestra), pero el oído
 /// humano percibe el volumen logarítmicamente: con una ganancia lineal, un slider 0-1 se siente
 /// "sin cambios" en su primer tramo y luego se dispara de golpe cerca del máximo. Una curva
-/// cúbica (aproximación estándar de "audio taper") hace que la posición del slider se sienta
-/// aproximadamente lineal con el volumen percibido.
+/// cuadrática (aproximación estándar de "audio taper") hace que la posición del slider se sienta
+/// aproximadamente lineal con el volumen percibido. Se probó primero con una curva cúbica
+/// (posición³), pero resultó demasiado agresiva — a 50% el volumen real caía a 12.5% de la
+/// ganancia máxima, notablemente más bajo que la referencia (p. ej. YouTube Music) al mismo
+/// punto del slider. Con el cuadrado, 50% cae a 25%, más cerca de lo esperado.
 export function volumePositionToGain(position: number): number {
   const clamped = Math.min(1, Math.max(0, position))
-  return clamped ** 3
+  return clamped ** 2
 }
 
 /// Estilo inline con la variable CSS que pinta de color de acento el tramo ya "recorrido" de un
