@@ -74,13 +74,26 @@ export function RepeatIcon(props: IconProps) {
 }
 
 export function RepeatOneIcon(props: IconProps) {
+  // El dígito solo (fontSize 8, sin fondo) se confundía con una "T" a tamaños pequeños. Un
+  // círculo relleno de currentColor detrás, con el número en el color de la superficie de la
+  // app (contraste fijo), hace que el modo "repetir pista" se distinga de "repetir cola" de un
+  // vistazo, sin depender del tooltip.
   return (
     <svg {...base} {...props}>
       <path d="M17 2l4 4-4 4" />
       <path d="M3 11V9a4 4 0 0 1 4-4h14" />
       <path d="M7 22l-4-4 4-4" />
       <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-      <text x="10.5" y="15" fontSize="8" fill="currentColor" stroke="none">
+      <circle cx="12" cy="12" r="5.5" fill="currentColor" stroke="none" />
+      <text
+        x="12"
+        y="15.5"
+        fontSize="9"
+        fontWeight="700"
+        fill="#17181d"
+        stroke="none"
+        textAnchor="middle"
+      >
         1
       </text>
     </svg>

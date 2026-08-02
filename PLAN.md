@@ -119,10 +119,16 @@ Verificación: pruebas unitarias con respuesta en frecuencia calculada analític
 - [ ] Atajos de teclado (espacio = play/pause, flechas = siguiente/anterior) — no implementados
 
 Bugs encontrados y corregidos durante la revisión manual con el usuario (primera vez que se ejerció la UI end-to-end):
+
 - `pick_and_add_folder` crasheaba la app: el diálogo nativo (`blocking_pick_folder`) bloqueaba el hilo principal al ser un comando Tauri sincrónico; la documentación del plugin exige que los métodos `blocking_*` se llamen desde un comando `async` (que Tauri despacha a un hilo del runtime, no al principal). Se corrigió agregando `async` a la firma y `State<'_, T>` en los parámetros.
 - Los `<select>` nativos se veían con fondo blanco y texto claro ilegible: faltaba `color-scheme: dark` en el HTML raíz.
 - `accent-color` no se renderiza de forma confiable en el WebView de Linux (WebKitGTK): se reemplazó por estilos manuales vía pseudo-elementos `::-webkit-slider-thumb`/`::-webkit-slider-runnable-track` (soportados también por WebView2 y WKWebView, los tres webviews de escritorio de Tauri).
 - El volumen "no hacía nada" perceptiblemente hasta cerca del máximo: no era un bug, la ganancia lineal de rodio no coincide con la percepción logarítmica del oído. Se aplicó una curva cúbica en el frontend al convertir la posición del slider a la ganancia real.
+- Activar aleatorio con una cola ya en curso no reordenaba la lista visible: `QueueState` llevaba una "bolsa" de orden interno (`shuffle_bag`) separada de `items`, así que la cola que veía el usuario no cambiaba. Se rediseñó para mezclar físicamente `items` (dejando la pista actual primero) al activar `shuffle`, y para re-mezclar al llegar al final de la cola cuando `shuffle` + `repeat: queue` están activos a la vez.
+- El menú "Agregar a playlist" de una pista solo listaba playlists existentes; para crear una había que ir primero a la vista Playlists. Se agregó un formulario inline (nombre + botón "Crear") dentro del mismo menú desplegable.
+- El botón de repetir tenía dos estados activos (naranja) visualmente casi idénticos — el dígito "1" de "repetir pista" se veía tan pequeño que se confundía con una "T", y sin pasar el mouse por el tooltip no se distinguía de "repetir cola". Se le agregó un círculo relleno de fondo al ícono de "repetir pista" para que el modo se note de un vistazo.
+- El área de clic vertical de la barra de progreso era demasiado angosta (calcada al grosor visual de 4px) y costaba acertarle con el mouse. Se agrandó el hitbox del `<input type="range">` sin tocar el grosor visual del track (fijado aparte por CSS).
+- Al presionar "anterior" en la primera o única pista de la cola, `QueueState::previous()` devolvía `None` pero el motor igual llamaba a `player.stop()` incondicionalmente, cortando la reproducción en curso sin ninguna señal al frontend (por eso el botón "play" quedaba desincronizado). Se agregó `QueueState::has_previous()`, se expuso en el snapshot de la cola, se deshabilita el botón "anterior" en el frontend cuando no hay historial navegable, y el motor ya no toca el reproductor cuando `previous()` no devuelve pista.
 
 ## Fase 9 — Empaquetado y distribución multiplataforma
 

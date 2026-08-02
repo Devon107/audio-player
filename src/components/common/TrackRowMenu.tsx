@@ -13,9 +13,12 @@ export function TrackRowMenu({ onPlayNow, onAddToQueue, onAddToPlaylist }: Track
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [showPlaylists, setShowPlaylists] = useState(false)
+  const [newPlaylistName, setNewPlaylistName] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const playlists = usePlaylistStore((s) => s.playlists)
   const refreshPlaylists = usePlaylistStore((s) => s.refreshPlaylists)
+  const createPlaylist = usePlaylistStore((s) => s.createPlaylist)
 
   useEffect(() => {
     if (!open) return
@@ -29,6 +32,20 @@ export function TrackRowMenu({ onPlayNow, onAddToQueue, onAddToPlaylist }: Track
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
+  const handleCreatePlaylist = async () => {
+    const name = newPlaylistName.trim()
+    if (!name || isCreating) return
+    setIsCreating(true)
+    try {
+      const id = await createPlaylist(name)
+      onAddToPlaylist(id)
+      setOpen(false)
+      setShowPlaylists(false)
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
   useEffect(() => {
     if (open) void refreshPlaylists()
   }, [open, refreshPlaylists])
@@ -39,6 +56,10 @@ export function TrackRowMenu({ onPlayNow, onAddToQueue, onAddToPlaylist }: Track
         type="button"
         onClick={(e) => {
           e.stopPropagation()
+          if (!open) {
+            setNewPlaylistName('')
+            setIsCreating(false)
+          }
           setOpen((v) => !v)
         }}
         className="rounded p-1.5 text-app-text-muted hover:bg-app-surface-hover hover:text-app-text"
@@ -80,25 +101,49 @@ export function TrackRowMenu({ onPlayNow, onAddToQueue, onAddToPlaylist }: Track
             />
           </button>
           {showPlaylists && (
-            <div className="max-h-48 overflow-y-auto border-t border-app-border bg-app-bg/40">
-              {playlists.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-app-text-muted">{t('playlists.empty')}</p>
-              ) : (
-                playlists.map((playlist) => (
-                  <button
-                    key={playlist.id}
-                    type="button"
-                    onClick={() => {
-                      onAddToPlaylist(playlist.id)
-                      setOpen(false)
-                      setShowPlaylists(false)
-                    }}
-                    className="block w-full truncate px-4 py-1.5 text-left text-sm text-app-text hover:bg-app-surface-hover"
-                  >
-                    {playlist.name}
-                  </button>
-                ))
-              )}
+            <div className="border-t border-app-border bg-app-bg/40">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void handleCreatePlaylist()
+                }}
+                className="flex items-center gap-1.5 p-2"
+              >
+                <input
+                  type="text"
+                  value={newPlaylistName}
+                  onChange={(e) => setNewPlaylistName(e.target.value)}
+                  placeholder={t('playlists.namePlaceholder')}
+                  className="min-w-0 flex-1 rounded border border-app-border bg-app-surface px-2 py-1 text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:ring-1 focus:ring-app-accent"
+                />
+                <button
+                  type="submit"
+                  disabled={!newPlaylistName.trim() || isCreating}
+                  className="shrink-0 rounded bg-app-accent px-2 py-1 text-xs font-medium text-white hover:bg-app-accent-hover disabled:opacity-40"
+                >
+                  {t('common.create')}
+                </button>
+              </form>
+              <div className="max-h-40 overflow-y-auto">
+                {playlists.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-app-text-muted">{t('playlists.empty')}</p>
+                ) : (
+                  playlists.map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      type="button"
+                      onClick={() => {
+                        onAddToPlaylist(playlist.id)
+                        setOpen(false)
+                        setShowPlaylists(false)
+                      }}
+                      className="block w-full truncate px-4 py-1.5 text-left text-sm text-app-text hover:bg-app-surface-hover"
+                    >
+                      {playlist.name}
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -10,7 +10,13 @@ import {
 import { volumePositionToGain } from '../lib/format'
 import type { QueueSnapshot, QueueTrackInput, RepeatMode } from '../lib/types'
 
-const EMPTY_QUEUE: QueueSnapshot = { items: [], current_id: null, shuffle: false, repeat: 'off' }
+const EMPTY_QUEUE: QueueSnapshot = {
+  items: [],
+  current_id: null,
+  shuffle: false,
+  repeat: 'off',
+  has_previous: false,
+}
 
 interface PlayerStore {
   queue: QueueSnapshot

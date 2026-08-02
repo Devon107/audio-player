@@ -31,6 +31,10 @@ pub enum RepeatMode {
 /// Estado de la cola de reproducción: orden de las pistas, cuál está sonando, modo aleatorio y
 /// modo de repetición. No sabe nada de audio real; solo decide "cuál sigue" — `audio::output` es
 /// quien usa esto para cargar y reproducir la pista resultante.
+///
+/// El modo aleatorio reordena físicamente `items` (dejando la pista actual primero) en vez de
+/// llevar un orden de reproducción oculto: así la cola que ve el usuario en la UI siempre refleja
+/// el orden real en el que se va a reproducir.
 #[derive(Default)]
 pub struct QueueState {
     items: Vec<QueueTrack>,
@@ -38,8 +42,6 @@ pub struct QueueState {
     current_id: Option<u64>,
     /// Pila de ids reproducidos anteriormente, para poder retroceder con `previous()`.
     history: Vec<u64>,
-    /// Ids pendientes de reproducir en el ciclo aleatorio actual (se rellena cuando se vacía).
-    shuffle_bag: Vec<u64>,
     shuffle: bool,
     repeat: RepeatMode,
 }
@@ -65,7 +67,7 @@ impl QueueState {
         self.repeat
     }
 
-    /// Reemplaza toda la cola. Reinicia posición actual, historial y bolsa de aleatorio.
+    /// Reemplaza toda la cola. Reinicia posición actual e historial.
     pub fn set_items(&mut self, inputs: Vec<QueueTrackInput>) {
         let mut items = Vec::with_capacity(inputs.len());
         for input in inputs {
@@ -79,7 +81,6 @@ impl QueueState {
         self.items = items;
         self.current_id = None;
         self.history.clear();
-        self.shuffle_bag.clear();
     }
 
     /// Agrega pistas al final de la cola sin afectar lo que está sonando.
@@ -99,7 +100,6 @@ impl QueueState {
     pub fn remove(&mut self, item_id: u64) {
         self.items.retain(|t| t.id != item_id);
         self.history.retain(|id| *id != item_id);
-        self.shuffle_bag.retain(|id| *id != item_id);
     }
 
     pub fn reorder(&mut self, item_id: u64, new_index: usize) {
@@ -115,15 +115,15 @@ impl QueueState {
         self.items.clear();
         self.current_id = None;
         self.history.clear();
-        self.shuffle_bag.clear();
     }
 
+    /// Al activarlo, mezcla la cola dejando la pista actual (si hay una) primero, para que lo
+    /// que se estaba escuchando no salte de golpe a otra cosa. Al desactivarlo se deja el orden
+    /// tal cual quedó (no se intenta reconstruir el orden original).
     pub fn set_shuffle(&mut self, enabled: bool) {
         self.shuffle = enabled;
         if enabled {
-            self.refill_shuffle_bag();
-        } else {
-            self.shuffle_bag.clear();
+            self.shuffle_keeping_current_first();
         }
     }
 
@@ -140,12 +140,16 @@ impl QueueState {
             }
         }
         self.current_id = Some(item_id);
-        self.shuffle_bag.retain(|id| *id != item_id);
         Some(track)
     }
 
     /// Calcula y adopta la siguiente pista según el modo de repetición/aleatorio. Devuelve
     /// `None` si no hay nada más que reproducir (cola vacía o fin de cola sin repetición).
+    ///
+    /// Con aleatorio activado, avanza secuencialmente por `items` igual que sin aleatorio — el
+    /// orden aleatorio ya está "cocinado" en `items` desde que se activó `shuffle` (o desde el
+    /// último `set_items`). Al llegar al final con `repeat = Queue`, si además `shuffle` está
+    /// activo, se vuelve a mezclar toda la cola para el siguiente ciclo.
     pub fn next(&mut self) -> Option<QueueTrack> {
         if self.items.is_empty() {
             self.current_id = None;
@@ -162,23 +166,20 @@ impl QueueState {
             self.history.push(id);
         }
 
-        let next_id = if self.shuffle {
-            if self.shuffle_bag.is_empty()
-                && (self.repeat == RepeatMode::Queue || self.current_id.is_none())
-            {
-                self.refill_shuffle_bag();
+        let idx = self
+            .current_id
+            .and_then(|id| self.items.iter().position(|t| t.id == id));
+
+        let next_id = match idx {
+            None => self.items.first().map(|t| t.id),
+            Some(i) if i + 1 < self.items.len() => Some(self.items[i + 1].id),
+            Some(_) if self.repeat == RepeatMode::Queue => {
+                if self.shuffle {
+                    self.items.shuffle(&mut rand::rng());
+                }
+                self.items.first().map(|t| t.id)
             }
-            self.shuffle_bag.pop()
-        } else {
-            let idx = self
-                .current_id
-                .and_then(|id| self.items.iter().position(|t| t.id == id));
-            match idx {
-                None => self.items.first().map(|t| t.id),
-                Some(i) if i + 1 < self.items.len() => Some(self.items[i + 1].id),
-                Some(_) if self.repeat == RepeatMode::Queue => self.items.first().map(|t| t.id),
-                Some(_) => None,
-            }
+            Some(_) => None,
         };
 
         self.current_id = next_id;
@@ -198,6 +199,16 @@ impl QueueState {
         None
     }
 
+    /// Indica si `previous()` devolvería una pista real en vez de `None` — es decir, si queda
+    /// algo en el historial que todavía exista en la cola. Se usa para deshabilitar el botón
+    /// "anterior" en el frontend en vez de dejar que retroceder en la primera/única pista
+    /// interrumpa la reproducción sin motivo.
+    pub fn has_previous(&self) -> bool {
+        self.history
+            .iter()
+            .any(|id| self.items.iter().any(|t| t.id == *id))
+    }
+
     fn find(&self, id: u64) -> Option<&QueueTrack> {
         self.items.iter().find(|t| t.id == id)
     }
@@ -207,19 +218,33 @@ impl QueueState {
         self.next_id
     }
 
-    fn refill_shuffle_bag(&mut self) {
-        let mut ids: Vec<u64> = self.items.iter().map(|t| t.id).collect();
-        if let Some(current) = self.current_id {
-            ids.retain(|id| *id != current);
+    fn shuffle_keeping_current_first(&mut self) {
+        if self.items.len() <= 1 {
+            return;
         }
-        ids.shuffle(&mut rand::rng());
-        self.shuffle_bag = ids;
+
+        let current = self.current_id;
+        let mut rest: Vec<QueueTrack> = self
+            .items
+            .iter()
+            .filter(|t| Some(t.id) != current)
+            .cloned()
+            .collect();
+        rest.shuffle(&mut rand::rng());
+
+        let mut reordered = Vec::with_capacity(self.items.len());
+        if let Some(current_track) = current.and_then(|id| self.find(id)).cloned() {
+            reordered.push(current_track);
+        }
+        reordered.extend(rest);
+        self.items = reordered;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn inputs(paths: &[&str]) -> Vec<QueueTrackInput> {
         paths
@@ -251,6 +276,25 @@ mod tests {
             None,
             "sin repeat, al final de la cola no hay siguiente"
         );
+    }
+
+    #[test]
+    fn has_previous_reflects_whether_previous_would_return_a_track() {
+        let mut q = QueueState::default();
+        q.set_items(inputs(&["a.mp3", "b.mp3"]));
+        assert!(!q.has_previous(), "sin historial no hay pista anterior");
+
+        q.next(); // a
+        assert!(
+            !q.has_previous(),
+            "en la primera pista todavía no hay historial"
+        );
+
+        q.next(); // b
+        assert!(q.has_previous(), "ahora sí hay una pista anterior (a)");
+
+        q.previous();
+        assert!(!q.has_previous(), "de vuelta en a, sin más historial");
     }
 
     #[test]
@@ -301,6 +345,24 @@ mod tests {
     }
 
     #[test]
+    fn enabling_shuffle_keeps_current_track_first_and_preserves_the_rest() {
+        let mut q = QueueState::default();
+        q.set_items(inputs(&["a.mp3", "b.mp3", "c.mp3", "d.mp3", "e.mp3"]));
+        let current = q.next().unwrap().id; // deja "a" como actual
+        let original: HashSet<u64> = ids(&q).into_iter().collect();
+
+        q.set_shuffle(true);
+
+        assert_eq!(
+            q.items()[0].id,
+            current,
+            "la pista actual debe quedar primera tras mezclar"
+        );
+        let after: HashSet<u64> = ids(&q).into_iter().collect();
+        assert_eq!(after, original, "mezclar no debe perder ni duplicar ítems");
+    }
+
+    #[test]
     fn shuffle_visits_every_track_exactly_once_before_repeating() {
         let mut q = QueueState::default();
         q.set_items(inputs(&["a.mp3", "b.mp3", "c.mp3", "d.mp3"]));
@@ -310,7 +372,7 @@ mod tests {
         for _ in 0..4 {
             visited.push(
                 q.next()
-                    .expect("debería haber pista mientras queden en la bolsa")
+                    .expect("debería haber pista mientras queden en la cola")
                     .id,
             );
         }
@@ -324,7 +386,7 @@ mod tests {
             "debe visitar cada pista exactamente una vez"
         );
 
-        // Sin repeat, al agotar la bolsa no hay más.
+        // Sin repeat, al llegar al final no hay más.
         assert_eq!(q.next(), None);
     }
 

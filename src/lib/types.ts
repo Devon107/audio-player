@@ -83,6 +83,7 @@ export interface QueueSnapshot {
   current_id: number | null
   shuffle: boolean
   repeat: RepeatMode
+  has_previous: boolean
 }
 
 export interface EqStateSnapshot {

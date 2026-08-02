@@ -84,7 +84,7 @@ export function PlayerBar({ onToggleQueue, queueOpen }: PlayerBarProps) {
           <button
             type="button"
             onClick={previous}
-            disabled={!hasTrack}
+            disabled={!hasTrack || !queue.has_previous}
             title={t('player.previous')}
             className="rounded p-1.5 text-app-text hover:text-app-accent disabled:opacity-30"
           >
@@ -154,7 +154,7 @@ export function PlayerBar({ onToggleQueue, queueOpen }: PlayerBarProps) {
               }
             }}
             style={rangeProgressStyle(displayPosition, 0, durationSecs || 0)}
-            className="h-1 flex-1"
+            className="h-4 flex-1"
           />
           <span className="w-10 shrink-0 text-[11px] tabular-nums text-app-text-muted">
             {formatDuration(durationSecs)}

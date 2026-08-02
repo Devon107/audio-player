@@ -65,6 +65,7 @@ pub struct QueueSnapshot {
     current_id: Option<u64>,
     shuffle: bool,
     repeat: RepeatMode,
+    has_previous: bool,
 }
 
 fn queue_snapshot(queue: &QueueState) -> QueueSnapshot {
@@ -73,6 +74,7 @@ fn queue_snapshot(queue: &QueueState) -> QueueSnapshot {
         current_id: queue.current_id(),
         shuffle: queue.shuffle(),
         repeat: queue.repeat(),
+        has_previous: queue.has_previous(),
     }
 }
 
@@ -274,8 +276,12 @@ fn run_engine<R: Runtime>(
                 apply_track!(queue.next());
             }
             Ok(AudioCommand::PreviousTrack) => {
-                queue_changed = true;
-                apply_track!(queue.previous());
+                // Si no hay historial (primera o única pista de la cola), no hacer nada: la
+                // reproducción en curso no debe interrumpirse por retroceder sin tener adónde ir.
+                if let Some(track) = queue.previous() {
+                    queue_changed = true;
+                    apply_track!(Some(track));
+                }
             }
             Ok(AudioCommand::SetShuffle(enabled)) => {
                 queue.set_shuffle(enabled);
