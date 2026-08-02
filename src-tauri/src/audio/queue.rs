@@ -164,6 +164,19 @@ impl QueueState {
         self.shuffle = enabled;
     }
 
+    /// Vuelve a mezclar la cola (dejando la pista actual primero) si el aleatorio está activo.
+    /// Pensado para cuando `set_items` reemplaza toda la cola — por ejemplo, al elegir reproducir
+    /// una pista desde la biblioteca — mientras el aleatorio ya estaba encendido: la cola nueva no
+    /// hereda ninguna mezcla de la anterior, así que sin esto quedaría en el orden original hasta
+    /// que el usuario apague y prenda el aleatorio a mano. Debe llamarse después de establecer
+    /// `current_id` (vía `play_item`), no antes, porque `shuffle_keeping_current_first` usa ese
+    /// id como ancla.
+    pub fn reshuffle_if_active(&mut self) {
+        if self.shuffle {
+            self.shuffle_keeping_current_first();
+        }
+    }
+
     pub fn set_repeat(&mut self, mode: RepeatMode) {
         self.repeat = mode;
     }
@@ -412,6 +425,46 @@ mod tests {
             ids(&q),
             original_order,
             "a diferencia de set_shuffle, no debería reordenar nada"
+        );
+    }
+
+    #[test]
+    fn reshuffle_if_active_reorders_a_freshly_replaced_queue_keeping_current_first() {
+        let mut q = QueueState::default();
+        q.set_shuffle_flag(true); // aleatorio ya estaba activo antes de elegir esta pista
+
+        q.set_items(inputs(&["a.mp3", "b.mp3", "c.mp3", "d.mp3", "e.mp3"]));
+        let original_order: Vec<u64> = ids(&q);
+        let chosen = q.items()[2].id; // el usuario elige "c" de la biblioteca
+        q.play_item(chosen);
+
+        q.reshuffle_if_active();
+
+        assert_eq!(
+            q.items()[0].id,
+            chosen,
+            "la pista elegida debe quedar primera tras mezclar"
+        );
+        assert_ne!(
+            ids(&q),
+            original_order,
+            "reemplazar la cola con aleatorio activo debe mezclarla, no dejarla en el orden original"
+        );
+    }
+
+    #[test]
+    fn reshuffle_if_active_does_nothing_when_shuffle_is_off() {
+        let mut q = QueueState::default();
+        q.set_items(inputs(&["a.mp3", "b.mp3", "c.mp3", "d.mp3", "e.mp3"]));
+        q.play_item(q.items()[2].id);
+        let original_order: Vec<u64> = ids(&q);
+
+        q.reshuffle_if_active();
+
+        assert_eq!(
+            ids(&q),
+            original_order,
+            "sin aleatorio no debe tocar el orden"
         );
     }
 

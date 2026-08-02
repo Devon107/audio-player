@@ -393,6 +393,12 @@ fn run_engine<R: Runtime>(
                     .and_then(|track| queue.play_item(track.id))
                     .or_else(|| queue.next());
 
+                // `set_items` reemplaza toda la cola sin heredar ninguna mezcla previa, así que
+                // si el aleatorio ya estaba activo (ej. se elige reproducir una pista desde la
+                // biblioteca con shuffle encendido) hay que volver a mezclar la cola nueva ahora,
+                // no solo cuando el usuario prende/apaga el aleatorio a mano.
+                queue.reshuffle_if_active();
+
                 match start_track {
                     Some(track) => handle_load_result(
                         load_and_play(&player, Path::new(&track.path), autoplay, &eq),
