@@ -131,7 +131,33 @@ pub fn remove_track_by_path(db: &DbHandle, path: &Path) -> Result<bool, String> 
             params![path.to_string_lossy()],
         )
         .map_err(|e| format!("No se pudo eliminar la pista: {e}"))?;
+    if affected > 0 {
+        cleanup_orphaned_taxonomy(&conn);
+    }
     Ok(affected > 0)
+}
+
+/// Borra de `artists`/`albums`/`genres` las filas que ya no tiene ninguna pista apuntándoles.
+/// Sin esto, quitar una carpeta (o que el watcher detecte archivos borrados) deja "fantasmas" en
+/// los filtros de artista/álbum/género: la pista desaparece de la tabla, pero el artista/álbum/
+/// género que solo ella usaba se queda en la base de datos para siempre.
+///
+/// Pública (además de llamarse internamente tras cada borrado de pistas) para poder correrla una
+/// vez al arrancar la app y barrer huérfanos que hayan quedado de antes de que existiera esta
+/// limpieza automática.
+pub fn cleanup_orphaned_taxonomy(conn: &Connection) {
+    let _ = conn.execute(
+        "DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM tracks WHERE artist_id IS NOT NULL)",
+        [],
+    );
+    let _ = conn.execute(
+        "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL)",
+        [],
+    );
+    let _ = conn.execute(
+        "DELETE FROM genres WHERE id NOT IN (SELECT DISTINCT genre_id FROM tracks WHERE genre_id IS NOT NULL)",
+        [],
+    );
 }
 
 /// Elimina todas las pistas registradas bajo `root` (usado al dejar de vigilar una carpeta).
@@ -321,6 +347,7 @@ fn remove_missing_tracks(db: &DbHandle, root: &Path, seen: &[PathBuf]) -> usize 
         .map(|id| id as &dyn rusqlite::ToSql)
         .collect();
     let _ = conn.execute(&sql, rusqlite_params.as_slice());
+    cleanup_orphaned_taxonomy(&conn);
 
     stale_ids.len()
 }
@@ -498,6 +525,48 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(track_count, 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regresión: quitar una carpeta borraba las pistas de `tracks`, pero dejaba "fantasmas" en
+    /// `artists`/`albums`/`genres` — filas sin ninguna pista que las siguiera referenciando, que
+    /// seguían apareciendo en los filtros de la biblioteca porque las consultas usaban `LEFT
+    /// JOIN`. `remove_tracks_under` ahora también debe limpiar esas tablas.
+    #[test]
+    fn remove_tracks_under_also_cleans_up_orphaned_artists_albums_and_genres() {
+        let dir = setup_temp_library();
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let db = DbHandle::open_at(Path::new(":memory:")).unwrap();
+
+        scan_folder(&db, handle, &dir);
+        {
+            let conn = db.lock();
+            let artist_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM artists", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(
+                artist_count, 2,
+                "con-caratula.mp3 (Artista Prueba) y tono.mp3 (Claude) traen artista en las fixtures"
+            );
+        }
+
+        remove_tracks_under(&db, &dir);
+
+        let conn = db.lock();
+        let artist_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM artists", [], |row| row.get(0))
+            .unwrap();
+        let album_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM albums", [], |row| row.get(0))
+            .unwrap();
+        let genre_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM genres", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(artist_count, 0, "no debería quedar ningún artista huérfano");
+        assert_eq!(album_count, 0, "no debería quedar ningún álbum huérfano");
+        assert_eq!(genre_count, 0, "no debería quedar ningún género huérfano");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

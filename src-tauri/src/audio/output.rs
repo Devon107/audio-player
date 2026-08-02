@@ -37,6 +37,10 @@ pub enum AudioCommand {
     },
     AddToQueue(Vec<QueueTrackInput>),
     RemoveFromQueue(u64),
+    /// Quita de la cola cualquier pista cuyo archivo esté bajo esta carpeta (usado cuando se deja
+    /// de vigilar una carpeta de la biblioteca: sus pistas ya no deberían seguir en la cola ni
+    /// seguir sonando en segundo plano aunque el archivo siga físicamente en disco).
+    RemoveQueueItemsUnder(PathBuf),
     ReorderQueue {
         item_id: u64,
         new_index: usize,
@@ -291,6 +295,14 @@ fn run_engine<R: Runtime>(
             Ok(AudioCommand::RemoveFromQueue(item_id)) => {
                 queue.remove(item_id);
                 queue_changed = true;
+            }
+            Ok(AudioCommand::RemoveQueueItemsUnder(root)) => {
+                queue_changed = true;
+                if queue.remove_under(&root) {
+                    player.stop();
+                    has_track = false;
+                    duration = None;
+                }
             }
             Ok(AudioCommand::ReorderQueue { item_id, new_index }) => {
                 queue.reorder(item_id, new_index);

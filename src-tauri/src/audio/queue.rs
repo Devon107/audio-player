@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
@@ -100,6 +102,28 @@ impl QueueState {
     pub fn remove(&mut self, item_id: u64) {
         self.items.retain(|t| t.id != item_id);
         self.history.retain(|id| *id != item_id);
+    }
+
+    /// Quita de la cola todas las pistas cuyo archivo está bajo `root` (usado cuando se deja de
+    /// vigilar una carpeta de la biblioteca). A diferencia de `remove()`, si la pista actual
+    /// queda atrapada en el borrado, se limpia `current_id` en vez de dejarla terminar de sonar
+    /// — la carpeta ya no es parte de la biblioteca, no tiene sentido seguir reproduciéndola en
+    /// segundo plano. Devuelve `true` si la pista actual fue una de las quitadas.
+    pub fn remove_under(&mut self, root: &Path) -> bool {
+        let current_affected = self
+            .current_id
+            .and_then(|id| self.find(id))
+            .is_some_and(|t| Path::new(&t.path).starts_with(root));
+
+        self.items.retain(|t| !Path::new(&t.path).starts_with(root));
+        self.history
+            .retain(|id| self.items.iter().any(|t| t.id == *id));
+
+        if current_affected {
+            self.current_id = None;
+        }
+
+        current_affected
     }
 
     pub fn reorder(&mut self, item_id: u64, new_index: usize) {
@@ -418,6 +442,51 @@ mod tests {
         );
         assert!(q.items().iter().all(|t| t.id != id_a));
         assert_eq!(q.items().len(), 1);
+    }
+
+    #[test]
+    fn remove_under_clears_current_id_when_current_track_is_under_the_removed_root() {
+        let mut q = QueueState::default();
+        q.set_items(inputs(&[
+            "/music/folder-a/a.mp3",
+            "/music/folder-a/b.mp3",
+            "/music/folder-b/c.mp3",
+        ]));
+        q.next(); // a, bajo folder-a
+
+        let affected = q.remove_under(Path::new("/music/folder-a"));
+
+        assert!(affected, "la pista actual estaba bajo la carpeta quitada");
+        assert_eq!(
+            q.current_id(),
+            None,
+            "a diferencia de remove(), acá sí se limpia: la carpeta ya no es parte de la biblioteca"
+        );
+        let paths: Vec<&str> = q.items().iter().map(|t| t.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["/music/folder-b/c.mp3"],
+            "solo debería sobrevivir la pista fuera de folder-a"
+        );
+    }
+
+    #[test]
+    fn remove_under_leaves_current_id_untouched_when_not_affected() {
+        let mut q = QueueState::default();
+        q.set_items(inputs(&["/music/folder-a/a.mp3", "/music/folder-b/c.mp3"]));
+        q.next(); // a
+        let id_a = q.current_id();
+        q.next(); // c, bajo folder-b
+
+        let affected = q.remove_under(Path::new("/music/folder-a"));
+
+        assert!(
+            !affected,
+            "la pista actual (c) no está bajo la carpeta quitada"
+        );
+        assert_ne!(q.current_id(), id_a);
+        assert_eq!(q.items().len(), 1);
+        assert_eq!(q.items()[0].path, "/music/folder-b/c.mp3");
     }
 
     #[test]

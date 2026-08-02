@@ -21,6 +21,11 @@ pub fn run() {
         .setup(|app| {
             let db_handle = db::init(app.handle())?;
 
+            // Barrido único al arrancar: limpia artistas/álbumes/géneros que hayan quedado
+            // huérfanos (sin ninguna pista) de versiones anteriores a que existiera esta limpieza
+            // automática en cada borrado. Ver `library::scanner::cleanup_orphaned_taxonomy`.
+            library::scanner::cleanup_orphaned_taxonomy(&db_handle.lock());
+
             let watched_folders: Vec<std::path::PathBuf> = {
                 let conn = db_handle.lock();
                 let mut stmt = conn.prepare("SELECT path FROM watched_folders")?;

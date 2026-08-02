@@ -63,10 +63,14 @@ pub fn list_tracks(conn: &Connection, filter: &TrackFilter) -> rusqlite::Result<
 }
 
 pub fn list_artists(conn: &Connection) -> rusqlite::Result<Vec<ArtistRecord>> {
+    // `INNER JOIN` (no `LEFT JOIN`) a propósito: un artista sin ninguna pista restante (p. ej.
+    // porque se quitó la carpeta que las contenía) no debería aparecer en el filtro. Esto además
+    // protege contra el caso en que quede una fila huérfana en `artists` por algún camino de
+    // borrado que no la haya limpiado explícitamente — ver `library::scanner::cleanup_orphaned_taxonomy`.
     let mut stmt = conn.prepare(
         "SELECT ar.id, ar.name, COUNT(t.id)
          FROM artists ar
-         LEFT JOIN tracks t ON t.artist_id = ar.id
+         INNER JOIN tracks t ON t.artist_id = ar.id
          GROUP BY ar.id
          ORDER BY ar.name COLLATE NOCASE",
     )?;
@@ -90,7 +94,7 @@ pub fn list_albums(
         "SELECT al.id, al.title, ar.name, COUNT(t.id)
          FROM albums al
          LEFT JOIN artists ar ON ar.id = al.artist_id
-         LEFT JOIN tracks t ON t.album_id = al.id
+         INNER JOIN tracks t ON t.album_id = al.id
          WHERE (?1 IS NULL OR al.artist_id = ?1)
          GROUP BY al.id
          ORDER BY al.title COLLATE NOCASE",
@@ -112,7 +116,7 @@ pub fn list_genres(conn: &Connection) -> rusqlite::Result<Vec<GenreRecord>> {
     let mut stmt = conn.prepare(
         "SELECT g.id, g.name, COUNT(t.id)
          FROM genres g
-         LEFT JOIN tracks t ON t.genre_id = g.id
+         INNER JOIN tracks t ON t.genre_id = g.id
          GROUP BY g.id
          ORDER BY g.name COLLATE NOCASE",
     )?;

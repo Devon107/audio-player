@@ -4,6 +4,8 @@ use rusqlite::params;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::audio::output::AudioCommand;
+use crate::audio::AudioEngineHandle;
 use crate::db::DbHandle;
 
 use super::models::{
@@ -55,10 +57,13 @@ pub async fn list_watched_folders(db: State<'_, DbHandle>) -> Result<Vec<String>
 }
 
 /// Deja de vigilar una carpeta y elimina de la biblioteca las pistas que estaban bajo ella.
+/// También las saca de la cola de reproducción — si no, seguían apareciendo (y hasta sonando)
+/// en la barra de reproducción aunque ya no fueran parte de la biblioteca.
 #[tauri::command]
 pub async fn remove_watched_folder(
     db: State<'_, DbHandle>,
     watcher: State<'_, LibraryWatcherHandle>,
+    audio: State<'_, AudioEngineHandle>,
     path: String,
 ) -> Result<(), String> {
     {
@@ -68,7 +73,8 @@ pub async fn remove_watched_folder(
     }
 
     scanner::remove_tracks_under(&db, Path::new(&path));
-    watcher.remove_folder(PathBuf::from(path));
+    watcher.remove_folder(PathBuf::from(&path));
+    audio.send(AudioCommand::RemoveQueueItemsUnder(PathBuf::from(&path)))?;
 
     Ok(())
 }
