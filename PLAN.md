@@ -82,12 +82,14 @@ Backend completo ✅ — igual que en fases anteriores, los botones de UI quedan
 
 ## Fase 5 — Playlists
 
-- [ ] Comandos Tauri: crear, renombrar, eliminar playlist
-- [ ] Comandos Tauri: agregar/quitar pistas de una playlist, reordenar pistas dentro de playlist
-- [ ] Persistir playlists en base de datos (tabla `playlists` / `playlist_tracks`)
+Backend completo ✅ (incluyendo la parte opcional de M3U) — la UI de playlists queda pendiente para la pasada de frontend.
+
+- [x] Comandos Tauri: `create_playlist`, `rename_playlist`, `delete_playlist`
+- [x] Comandos Tauri: `add_tracks_to_playlist`, `remove_track_from_playlist`, `reorder_playlist_track` (reescribe posiciones 0..n dentro de una transacción, sin depender de aritmética de huecos)
+- [x] Persistencia en `playlists`/`playlist_tracks` (ya creadas en el esquema de la Fase 3); `playlist::queries` expone las operaciones como funciones puras sobre `&Connection`, testeables sin el harness de Tauri (mismo patrón que `library::queries`)
 - [ ] UI: vista de playlists (sidebar o sección dedicada), drag-and-drop para reordenar/agregar canciones
-- [ ] Reproducir playlist completa (cargar como cola)
-- [ ] Exportar/importar playlists (opcional: formato `.m3u`)
+- [x] Reproducir playlist completa: `play_playlist` arma un `Vec<QueueTrackInput>` desde `playlist_tracks` y lo manda como `AudioCommand::SetQueue` al motor de la Fase 4 (tuve que volver `pub(crate)` los módulos `audio::output`/`audio::queue`, antes privados, para que `playlist::commands` pudiera construir el comando)
+- [x] Exportar/importar M3U (`playlist::m3u`): exporta `#EXTM3U` con `#EXTINF` (duración + "artista - título") y rutas absolutas; al importar, las pistas que ya están en la biblioteca se enlazan directamente y las que faltan se escanean y agregan automáticamente vía `library::scanner::upsert_track_file`; las entradas cuyo archivo ya no existe se omiten sin fallar la importación
 
 ## Fase 6 — Ecualizador
 

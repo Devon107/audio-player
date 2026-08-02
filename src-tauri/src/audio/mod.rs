@@ -1,6 +1,6 @@
 pub mod commands;
 mod decoder;
-mod output;
-mod queue;
+pub(crate) mod output;
+pub(crate) mod queue;
 
 pub use output::AudioEngineHandle;
