@@ -32,6 +32,8 @@
     "addFolder": "Agregar carpeta",
     "rescan": "Reescanear",
     "rescanning": "Escaneando…",
+    "scanningProgress_one": "Escaneando… {{count}} encontrada",
+    "scanningProgress_other": "Escaneando… {{count}} encontradas",
     "watchedFolders": "Carpetas vigiladas",
     "noFolders": "Todavía no agregaste ninguna carpeta.",
     "noFoldersHint": "Agregá una carpeta con música para empezar.",

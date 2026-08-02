@@ -32,6 +32,8 @@
     "addFolder": "Add folder",
     "rescan": "Rescan",
     "rescanning": "Scanning…",
+    "scanningProgress_one": "Scanning… {{count}} found",
+    "scanningProgress_other": "Scanning… {{count}} found",
     "watchedFolders": "Watched folders",
     "noFolders": "You haven't added any folders yet.",
     "noFoldersHint": "Add a folder with music to get started.",

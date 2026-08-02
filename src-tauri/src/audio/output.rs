@@ -5,10 +5,12 @@ use std::time::Duration;
 
 use rodio::{DeviceSinkBuilder, Player};
 use serde::Serialize;
+use souvlaki::{MediaControls, MediaPlayback, MediaPosition};
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::decoder::TrackDecoder;
 use super::equalizer::{EqualizerControl, EqualizerSource};
+use super::media_controls;
 use super::queue::{QueueState, QueueTrack, QueueTrackInput, RepeatMode};
 
 /// Intervalo al que se emite el progreso de reproducción y se revisa si la pista terminó.
@@ -43,6 +45,10 @@ pub enum AudioCommand {
     PlayQueueItem(u64),
     NextTrack,
     PreviousTrack,
+    /// Alterna play/pause. Separado de `Play`/`Pause` porque los controles nativos de medios del
+    /// SO (tecla multimedia de "toggle", botón único de un parlante) no saben si está sonando o
+    /// pausado — quien sí lo sabe es el motor, vía `player.is_paused()`.
+    TogglePlayPause,
     SetShuffle(bool),
     SetRepeatMode(RepeatMode),
     GetQueueState(mpsc::Sender<QueueSnapshot>),
@@ -52,6 +58,11 @@ pub enum AudioCommand {
 struct ProgressPayload {
     position_secs: f64,
     duration_secs: Option<f64>,
+    /// Estado real de reproducción del motor. El frontend no tiene otra forma de enterarse
+    /// cuando play/pause se dispara desde afuera de la propia UI (teclas multimedia del teclado,
+    /// control remoto Bluetooth vía AVRCP/MPRIS): sin esto, el ícono de play/pause queda
+    /// desincronizado porque el frontend solo actualizaba `isPlaying` de forma optimista.
+    is_playing: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -88,7 +99,8 @@ impl AudioEngineHandle {
     /// `MockRuntime` en lugar del runtime `Wry` por defecto.
     pub fn spawn<R: Runtime + 'static>(app: AppHandle<R>, eq: EqualizerControl) -> Self {
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || run_engine(rx, app, eq));
+        let media_tx = tx.clone();
+        thread::spawn(move || run_engine(rx, media_tx, app, eq));
         Self { tx }
     }
 
@@ -120,12 +132,15 @@ fn load_and_play(
 }
 
 /// Aplica el resultado de `load_and_play` al estado local del motor y emite el evento
-/// correspondiente (`player://loaded` o `player://error`).
+/// correspondiente (`player://loaded` o `player://error`). También reporta la metadata de la
+/// pista a los controles nativos de medios del SO, si están disponibles.
 fn handle_load_result<R: Runtime>(
     result: Result<Option<Duration>, String>,
     app: &AppHandle<R>,
     duration: &mut Option<Duration>,
     has_track: &mut bool,
+    media_controls: Option<&mut MediaControls>,
+    path: &Path,
 ) {
     match result {
         Ok(dur) => {
@@ -137,6 +152,9 @@ fn handle_load_result<R: Runtime>(
                     duration_secs: dur.map(|d| d.as_secs_f64()),
                 },
             );
+            if let Some(controls) = media_controls {
+                media_controls::update_metadata(controls, app, path, dur.map(|d| d.as_secs_f64()));
+            }
         }
         Err(e) => {
             *has_track = false;
@@ -151,6 +169,7 @@ fn handle_load_result<R: Runtime>(
 /// plataformas, por lo que no puede vivir directamente en el estado gestionado por Tauri.
 fn run_engine<R: Runtime>(
     rx: mpsc::Receiver<AudioCommand>,
+    media_tx: mpsc::Sender<AudioCommand>,
     app: AppHandle<R>,
     eq: EqualizerControl,
 ) {
@@ -169,6 +188,7 @@ fn run_engine<R: Runtime>(
     let mut duration: Option<Duration> = None;
     let mut has_track = false;
     let mut queue = QueueState::default();
+    let mut media_controls = media_controls::init(&app, media_tx);
 
     // Aplica el resultado de avanzar/retroceder/saltar en la cola (o detiene la reproducción si
     // `$track` es `None`, es decir, no queda nada por reproducir).
@@ -180,6 +200,8 @@ fn run_engine<R: Runtime>(
                     &app,
                     &mut duration,
                     &mut has_track,
+                    media_controls.as_mut(),
+                    Path::new(&track.path),
                 ),
                 None => {
                     player.stop();
@@ -192,6 +214,7 @@ fn run_engine<R: Runtime>(
 
     loop {
         let mut queue_changed = false;
+        let had_track = has_track;
 
         match rx.recv_timeout(TICK_INTERVAL) {
             Ok(AudioCommand::Load { path, autoplay }) => {
@@ -202,10 +225,21 @@ fn run_engine<R: Runtime>(
                     &app,
                     &mut duration,
                     &mut has_track,
+                    media_controls.as_mut(),
+                    &path,
                 );
             }
             Ok(AudioCommand::Play) => player.play(),
             Ok(AudioCommand::Pause) => player.pause(),
+            Ok(AudioCommand::TogglePlayPause) => {
+                if has_track {
+                    if player.is_paused() {
+                        player.play();
+                    } else {
+                        player.pause();
+                    }
+                }
+            }
             Ok(AudioCommand::Stop) => {
                 player.stop();
                 has_track = false;
@@ -240,6 +274,8 @@ fn run_engine<R: Runtime>(
                         &app,
                         &mut duration,
                         &mut has_track,
+                        media_controls.as_mut(),
+                        Path::new(&track.path),
                     ),
                     None => {
                         player.stop();
@@ -316,8 +352,29 @@ fn run_engine<R: Runtime>(
                     ProgressPayload {
                         position_secs: player.get_pos().as_secs_f64(),
                         duration_secs: duration.map(|d| d.as_secs_f64()),
+                        is_playing: !player.is_paused(),
                     },
                 );
+            }
+        }
+
+        // Sincroniza el estado de reproducción con los controles nativos de medios del SO: la
+        // posición/estado playing-vs-paused se reenvía en cada tick (misma cadencia que
+        // `player://progress`, para que el widget del SO no se desincronice), pero "Stopped" solo
+        // se manda una vez, justo en la transición, para no spamear el bus de mensajes mientras
+        // está inactivo.
+        if let Some(controls) = media_controls.as_mut() {
+            if has_track {
+                let progress = Some(MediaPosition(player.get_pos()));
+                let playback = if player.is_paused() {
+                    MediaPlayback::Paused { progress }
+                } else {
+                    MediaPlayback::Playing { progress }
+                };
+                media_controls::update_playback(controls, playback);
+            } else if had_track {
+                media_controls::update_playback(controls, MediaPlayback::Stopped);
+                media_controls::clear_metadata(controls);
             }
         }
 

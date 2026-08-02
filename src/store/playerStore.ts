@@ -63,7 +63,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       set({ durationSecs: payload.duration_secs, positionSecs: 0 })
     })
     onPlayerProgress((payload) => {
-      set({ positionSecs: payload.position_secs, durationSecs: payload.duration_secs })
+      set({
+        positionSecs: payload.position_secs,
+        durationSecs: payload.duration_secs,
+        isPlaying: payload.is_playing,
+      })
     })
     onPlayerTrackEnded(() => {
       set({ isPlaying: false, positionSecs: 0 })

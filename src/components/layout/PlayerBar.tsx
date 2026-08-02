@@ -23,9 +23,10 @@ const REPEAT_CYCLE: RepeatMode[] = ['off', 'queue', 'track']
 interface PlayerBarProps {
   onToggleQueue: () => void
   queueOpen: boolean
+  onOpenNowPlaying: () => void
 }
 
-export function PlayerBar({ onToggleQueue, queueOpen }: PlayerBarProps) {
+export function PlayerBar({ onToggleQueue, queueOpen, onOpenNowPlaying }: PlayerBarProps) {
   const { t } = useTranslation()
   const queue = usePlayerStore((s) => s.queue)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
@@ -54,7 +55,13 @@ export function PlayerBar({ onToggleQueue, queueOpen }: PlayerBarProps) {
 
   return (
     <footer className="flex h-20 shrink-0 items-center gap-4 border-t border-app-border bg-app-surface px-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      <button
+        type="button"
+        onClick={onOpenNowPlaying}
+        disabled={!hasTrack}
+        title={t('player.nowPlaying')}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left disabled:cursor-default"
+      >
         <CoverArt
           coverPath={info?.coverPath}
           alt={info?.title ?? ''}
@@ -69,7 +76,7 @@ export function PlayerBar({ onToggleQueue, queueOpen }: PlayerBarProps) {
             {info?.artist ?? (hasTrack ? t('common.unknownArtist') : '')}
           </p>
         </div>
-      </div>
+      </button>
 
       <div className="flex w-full max-w-xl flex-1 flex-col items-center gap-1">
         <div className="flex items-center gap-3">

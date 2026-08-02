@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{Instant, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use walkdir::WalkDir;
 
 use crate::db::DbHandle;
@@ -13,6 +13,11 @@ use crate::metadata::reader::{self, TrackMetadata};
 use super::models::ScanSummary;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "oga", "wav", "m4a", "mp4", "aac"];
+
+/// Cada cuánto se emite `library://scan-progress` durante un escaneo largo. Emitir por archivo
+/// saturaría el puente IPC en carpetas con miles de canciones; con este intervalo el frontend
+/// recibe actualizaciones fluidas sin ahogarse en eventos.
+const PROGRESS_EMIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
 
 pub fn is_supported_audio_file(path: &Path) -> bool {
     path.extension()
@@ -27,9 +32,15 @@ pub fn is_supported_audio_file(path: &Path) -> bool {
 /// Escanea recursivamente `root`, agregando/actualizando pistas en la base de datos y
 /// eliminando las que ya no existen en disco. Es seguro llamarlo repetidamente: los archivos
 /// cuyo tamaño y fecha de modificación no cambiaron se saltan sin releer sus etiquetas.
+///
+/// Cada pista se guarda en SQLite a medida que se procesa (no al final), así que mientras dura
+/// el escaneo se emite `library://scan-progress` a intervalos con el conteo parcial — el
+/// frontend lo usa para refrescar la tabla y mostrar canciones apareciendo en vivo, en vez de
+/// quedarse sin novedades hasta que termine de recorrer toda la carpeta.
 pub fn scan_folder<R: Runtime>(db: &DbHandle, app: &AppHandle<R>, root: &Path) -> ScanSummary {
     let mut summary = ScanSummary::default();
     let mut seen_paths = Vec::new();
+    let mut last_emit = Instant::now();
 
     for entry in WalkDir::new(root)
         .follow_links(false)
@@ -49,9 +60,15 @@ pub fn scan_folder<R: Runtime>(db: &DbHandle, app: &AppHandle<R>, root: &Path) -
             Ok(None) => {}
             Err(_) => summary.errors += 1,
         }
+
+        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+            let _ = app.emit("library://scan-progress", summary.clone());
+            last_emit = Instant::now();
+        }
     }
 
     summary.removed = remove_missing_tracks(db, root, &seen_paths);
+    let _ = app.emit("library://scan-progress", summary.clone());
     summary
 }
 

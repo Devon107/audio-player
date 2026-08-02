@@ -20,7 +20,13 @@ export function LibraryView() {
   const addFolder = useLibraryStore((s) => s.addFolder)
   const rescan = useLibraryStore((s) => s.rescan)
   const isScanning = useLibraryStore((s) => s.isScanning)
+  const scanProgress = useLibraryStore((s) => s.scanProgress)
   const watchedFolders = useLibraryStore((s) => s.watchedFolders)
+
+  const scanningLabel =
+    isScanning && scanProgress && scanProgress.scanned > 0
+      ? t('library.scanningProgress', { count: scanProgress.scanned })
+      : t('library.rescanning')
 
   useEffect(() => {
     void init()
@@ -93,7 +99,7 @@ export function LibraryView() {
             disabled={isScanning}
             className="rounded-lg border border-app-border px-3 py-1.5 text-sm font-medium text-app-text hover:bg-app-surface-hover disabled:opacity-50"
           >
-            {isScanning ? t('library.rescanning') : t('library.rescan')}
+            {isScanning ? scanningLabel : t('library.rescan')}
           </button>
         )}
       </div>
@@ -109,7 +115,11 @@ export function LibraryView() {
         ) : isScanning && tracks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-app-border border-t-app-accent" />
-            <p className="text-sm text-app-text">{t('library.scanningInProgress')}</p>
+            <p className="text-sm text-app-text">
+              {scanProgress && scanProgress.scanned > 0
+                ? scanningLabel
+                : t('library.scanningInProgress')}
+            </p>
           </div>
         ) : (
           <TrackTable tracks={tracks} emptyMessage={t('library.noTracks')} />

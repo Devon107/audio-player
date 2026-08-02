@@ -50,15 +50,15 @@ pub async fn pick_and_add_folder(
 }
 
 #[tauri::command]
-pub fn list_watched_folders(db: State<DbHandle>) -> Result<Vec<String>, String> {
+pub async fn list_watched_folders(db: State<'_, DbHandle>) -> Result<Vec<String>, String> {
     queries::list_watched_folders(&db.lock()).map_err(|e| e.to_string())
 }
 
 /// Deja de vigilar una carpeta y elimina de la biblioteca las pistas que estaban bajo ella.
 #[tauri::command]
-pub fn remove_watched_folder(
-    db: State<DbHandle>,
-    watcher: State<LibraryWatcherHandle>,
+pub async fn remove_watched_folder(
+    db: State<'_, DbHandle>,
+    watcher: State<'_, LibraryWatcherHandle>,
     path: String,
 ) -> Result<(), String> {
     {
@@ -74,8 +74,16 @@ pub fn remove_watched_folder(
 }
 
 /// Vuelve a escanear todas las carpetas vigiladas. Los archivos sin cambios se saltan.
+///
+/// Tiene que ser `async`: recorrer y releer etiquetas de una biblioteca grande puede tardar
+/// bastante, y los comandos Tauri no-`async` corren en el hilo principal — si este comando fuera
+/// sincrónico, toda la ventana dejaría de responder (ni siquiera se podrían procesar clics)
+/// durante todo el escaneo. Mismo motivo por el que `pick_and_add_folder` también es `async`.
 #[tauri::command]
-pub fn rescan_library(app: AppHandle, db: State<DbHandle>) -> Result<ScanSummary, String> {
+pub async fn rescan_library(
+    app: AppHandle,
+    db: State<'_, DbHandle>,
+) -> Result<ScanSummary, String> {
     let folders = queries::list_watched_folders(&db.lock()).map_err(|e| e.to_string())?;
 
     let mut total = ScanSummary::default();
@@ -91,25 +99,32 @@ pub fn rescan_library(app: AppHandle, db: State<DbHandle>) -> Result<ScanSummary
     Ok(total)
 }
 
+/// `async` por la misma razón que el resto de los comandos de este archivo: se invoca a
+/// intervalos regulares mientras hay un escaneo en curso (para refrescar la tabla en vivo, ver
+/// `library::scanner::scan_folder`), y si corriera en el hilo principal esas invocaciones
+/// repetidas competirían con el propio escaneo y congelarían la ventana.
 #[tauri::command]
-pub fn list_tracks(db: State<DbHandle>, filter: TrackFilter) -> Result<Vec<TrackRecord>, String> {
+pub async fn list_tracks(
+    db: State<'_, DbHandle>,
+    filter: TrackFilter,
+) -> Result<Vec<TrackRecord>, String> {
     queries::list_tracks(&db.lock(), &filter).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn list_artists(db: State<DbHandle>) -> Result<Vec<ArtistRecord>, String> {
+pub async fn list_artists(db: State<'_, DbHandle>) -> Result<Vec<ArtistRecord>, String> {
     queries::list_artists(&db.lock()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn list_albums(
-    db: State<DbHandle>,
+pub async fn list_albums(
+    db: State<'_, DbHandle>,
     artist_id: Option<i64>,
 ) -> Result<Vec<AlbumRecord>, String> {
     queries::list_albums(&db.lock(), artist_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn list_genres(db: State<DbHandle>) -> Result<Vec<GenreRecord>, String> {
+pub async fn list_genres(db: State<'_, DbHandle>) -> Result<Vec<GenreRecord>, String> {
     queries::list_genres(&db.lock()).map_err(|e| e.to_string())
 }

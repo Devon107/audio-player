@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { library } from '../lib/tauri'
-import { onLibraryError, onLibraryUpdated } from '../lib/events'
+import { onLibraryError, onLibraryScanProgress, onLibraryUpdated } from '../lib/events'
 import type { AlbumRecord, ArtistRecord, GenreRecord, ScanSummary, TrackRecord } from '../lib/types'
 
 const SEARCH_DEBOUNCE_MS = 250
@@ -21,6 +21,9 @@ interface LibraryStore {
   filter: LibraryFilterState
   isLoadingTracks: boolean
   isScanning: boolean
+  /** Conteo parcial del escaneo en curso, actualizado en vivo vía `library://scan-progress`.
+   * `null` cuando no hay ningún escaneo corriendo. */
+  scanProgress: ScanSummary | null
   lastScanSummary: ScanSummary | null
   lastError: string | null
   initialized: boolean
@@ -50,6 +53,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
   filter: { search: '', artistId: null, albumId: null, genreId: null },
   isLoadingTracks: false,
   isScanning: false,
+  scanProgress: null,
   lastScanSummary: null,
   lastError: null,
   initialized: false,
@@ -61,7 +65,12 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     onLibraryUpdated(() => {
       void get().refreshTracks()
       void get().refreshSidebarLists()
-      set({ isScanning: false })
+      set({ isScanning: false, scanProgress: null })
+    })
+    onLibraryScanProgress((summary) => {
+      set({ scanProgress: summary })
+      void get().refreshTracks()
+      void get().refreshSidebarLists()
     })
     onLibraryError((message) => set({ lastError: message }))
 
@@ -143,7 +152,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
       // El escaneo inicial de la carpeta corre en el backend y puede tardar (lee metadatos y
       // extrae carátulas de cada archivo). `isScanning` se apaga cuando llega el evento
       // `library://updated`, no acá — así la UI muestra que está trabajando mientras tanto.
-      set({ isScanning: true })
+      set({ isScanning: true, scanProgress: null })
       await get().refreshWatchedFolders()
     }
     return path
@@ -157,7 +166,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
   },
 
   rescan: async () => {
-    set({ isScanning: true })
+    set({ isScanning: true, scanProgress: null })
     try {
       const summary = await library.rescanLibrary()
       set({ lastScanSummary: summary })
@@ -166,7 +175,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     } catch (error) {
       set({ lastError: String(error) })
     } finally {
-      set({ isScanning: false })
+      set({ isScanning: false, scanProgress: null })
     }
   },
 

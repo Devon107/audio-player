@@ -116,6 +116,7 @@ export interface PlaylistTrackRecord {
 export interface ProgressPayload {
   position_secs: number
   duration_secs: number | null
+  is_playing: boolean
 }
 
 export interface LoadedPayload {

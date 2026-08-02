@@ -6,6 +6,7 @@ export interface CurrentTrackInfo {
   title: string
   artist: string | null
   album: string | null
+  genre: string | null
   coverPath: string | null
 }
 
@@ -35,7 +36,13 @@ export function useCurrentTrackInfo(): CurrentTrackInfo | null {
           ? await metadata.getCoverArt(currentPath).catch(() => null)
           : null
         if (!cancelled) {
-          setInfo({ title: meta.title, artist: meta.artist, album: meta.album, coverPath })
+          setInfo({
+            title: meta.title,
+            artist: meta.artist,
+            album: meta.album,
+            genre: meta.genre,
+            coverPath,
+          })
         }
       } catch {
         if (!cancelled) {
@@ -43,6 +50,7 @@ export function useCurrentTrackInfo(): CurrentTrackInfo | null {
             title: currentPath.split(/[/\\]/).pop() ?? currentPath,
             artist: null,
             album: null,
+            genre: null,
             coverPath: null,
           })
         }

@@ -185,6 +185,14 @@ export function ChevronDownIcon(props: IconProps) {
   )
 }
 
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M15 6l-6 6 6 6" />
+    </svg>
+  )
+}
+
 export function GripIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

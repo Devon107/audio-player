@@ -1,5 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
-import type { LoadedPayload, ProgressPayload, QueueSnapshot } from './types'
+import type { LoadedPayload, ProgressPayload, QueueSnapshot, ScanSummary } from './types'
 
 // Envoltorios tipados sobre `listen()` para los eventos que emite el motor de audio
 // (src-tauri/src/audio/output.rs) y el watcher de biblioteca (src-tauri/src/library/watcher.rs).
@@ -27,6 +27,10 @@ export function onPlayerError(handler: (message: string) => void) {
 
 export function onLibraryUpdated(handler: () => void) {
   return listen('library://updated', () => handler())
+}
+
+export function onLibraryScanProgress(handler: (summary: ScanSummary) => void) {
+  return listen<ScanSummary>('library://scan-progress', (event) => handler(event.payload))
 }
 
 export function onLibraryError(handler: (message: string) => void) {
