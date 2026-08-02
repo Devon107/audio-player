@@ -56,7 +56,8 @@
     },
     "addToQueue": "Agregar a la cola",
     "addToPlaylist": "Agregar a playlist",
-    "playNow": "Reproducir"
+    "playNow": "Reproducir",
+    "filterByArtist": "Ver canciones de {{name}}"
   },
   "player": {
     "noTrack": "Ninguna pista en reproducción",

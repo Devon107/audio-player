@@ -56,7 +56,8 @@
     },
     "addToQueue": "Add to queue",
     "addToPlaylist": "Add to playlist",
-    "playNow": "Play"
+    "playNow": "Play",
+    "filterByArtist": "Show tracks by {{name}}"
   },
   "player": {
     "noTrack": "No track playing",

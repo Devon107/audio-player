@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { usePlayerStore } from '../../store/playerStore'
+import { useLibraryStore } from '../../store/libraryStore'
 import { useCurrentTrackInfo } from '../../lib/useCurrentTrackInfo'
 import { formatDuration, rangeProgressStyle } from '../../lib/format'
 import { CoverArt } from '../common/CoverArt'
@@ -24,11 +25,18 @@ interface PlayerBarProps {
   onToggleQueue: () => void
   queueOpen: boolean
   onOpenNowPlaying: () => void
+  onFilterArtist: (artistId: number) => void
 }
 
-export function PlayerBar({ onToggleQueue, queueOpen, onOpenNowPlaying }: PlayerBarProps) {
+export function PlayerBar({
+  onToggleQueue,
+  queueOpen,
+  onOpenNowPlaying,
+  onFilterArtist,
+}: PlayerBarProps) {
   const { t } = useTranslation()
   const queue = usePlayerStore((s) => s.queue)
+  const artists = useLibraryStore((s) => s.artists)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
   const positionSecs = usePlayerStore((s) => s.positionSecs)
   const durationSecs = usePlayerStore((s) => s.durationSecs)
@@ -48,6 +56,15 @@ export function PlayerBar({ onToggleQueue, queueOpen, onOpenNowPlaying }: Player
   const hasTrack = queue.current_id != null
   const displayPosition = isSeeking ? seekValue : positionSecs
 
+  // Los nombres de artista están normalizados y son únicos (sin distinguir mayúsculas) en la
+  // base de datos, así que el nombre que viene de las etiquetas de la pista actual alcanza para
+  // encontrar el id correspondiente en la lista ya cargada — sin necesidad de un viaje aparte al
+  // backend. Si la pista no está en la biblioteca (archivo suelto) o el artista no matchea,
+  // simplemente no hay nada clickeable.
+  const currentArtist = info?.artist
+    ? (artists.find((a) => a.name.toLowerCase() === info.artist!.toLowerCase()) ?? null)
+    : null
+
   const cycleRepeat = () => {
     const nextIndex = (REPEAT_CYCLE.indexOf(queue.repeat) + 1) % REPEAT_CYCLE.length
     void setRepeatMode(REPEAT_CYCLE[nextIndex])
@@ -55,28 +72,41 @@ export function PlayerBar({ onToggleQueue, queueOpen, onOpenNowPlaying }: Player
 
   return (
     <footer className="flex h-20 shrink-0 items-center gap-4 border-t border-app-border bg-app-surface px-4">
-      <button
-        type="button"
-        onClick={onOpenNowPlaying}
-        disabled={!hasTrack}
-        title={t('player.nowPlaying')}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left disabled:cursor-default"
-      >
-        <CoverArt
-          coverPath={info?.coverPath}
-          alt={info?.title ?? ''}
-          className="h-12 w-12 shrink-0 rounded-md"
-          iconClassName="h-5 w-5"
-        />
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <button
+          type="button"
+          onClick={onOpenNowPlaying}
+          disabled={!hasTrack}
+          title={t('player.nowPlaying')}
+          className="shrink-0 rounded-md disabled:cursor-default"
+        >
+          <CoverArt
+            coverPath={info?.coverPath}
+            alt={info?.title ?? ''}
+            className="h-12 w-12 rounded-md"
+            iconClassName="h-5 w-5"
+          />
+        </button>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-app-text">
             {hasTrack ? (info?.title ?? '…') : t('player.noTrack')}
           </p>
-          <p className="truncate text-xs text-app-text-muted">
-            {info?.artist ?? (hasTrack ? t('common.unknownArtist') : '')}
-          </p>
+          {currentArtist ? (
+            <button
+              type="button"
+              onClick={() => onFilterArtist(currentArtist.id)}
+              title={t('library.filterByArtist', { name: currentArtist.name })}
+              className="truncate text-xs text-app-text-muted hover:text-app-accent hover:underline"
+            >
+              {currentArtist.name}
+            </button>
+          ) : (
+            <p className="truncate text-xs text-app-text-muted">
+              {info?.artist ?? (hasTrack ? t('common.unknownArtist') : '')}
+            </p>
+          )}
         </div>
-      </button>
+      </div>
 
       <div className="flex w-full max-w-xl flex-1 flex-col items-center gap-1">
         <div className="flex items-center gap-3">

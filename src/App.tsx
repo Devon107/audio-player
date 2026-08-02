@@ -9,6 +9,7 @@ import { SettingsView } from './components/settings/SettingsView'
 import { NowPlayingView } from './components/nowplaying/NowPlayingView'
 import { ErrorToast } from './components/common/ErrorToast'
 import { usePlayerStore } from './store/playerStore'
+import { useLibraryStore } from './store/libraryStore'
 import { useGlobalShortcuts } from './lib/useGlobalShortcuts'
 import { initI18n } from './i18n'
 
@@ -19,11 +20,17 @@ function App() {
   const [previousView, setPreviousView] = useState<ViewId>('library')
   const [queueOpen, setQueueOpen] = useState(false)
   const initPlayer = usePlayerStore((s) => s.init)
+  const initLibrary = useLibraryStore((s) => s.init)
+  const setArtistFilter = useLibraryStore((s) => s.setArtistFilter)
 
   useEffect(() => {
     void initI18n()
     void initPlayer()
-  }, [initPlayer])
+    // La biblioteca se carga acá (no solo perezosamente al visitar la vista) porque la barra de
+    // reproducción necesita la lista de artistas para resolver el filtro al hacer clic en el
+    // nombre del artista, sin importar qué vista esté activa en ese momento.
+    void initLibrary()
+  }, [initPlayer, initLibrary])
 
   useGlobalShortcuts()
 
@@ -35,6 +42,11 @@ function App() {
   const selectView = (next: ViewId) => {
     if (view !== 'nowPlaying') setPreviousView(view)
     setView(next)
+  }
+
+  const filterByArtist = (artistId: number) => {
+    setArtistFilter(artistId)
+    selectView('library')
   }
 
   return (
@@ -57,6 +69,7 @@ function App() {
         queueOpen={queueOpen}
         onToggleQueue={() => setQueueOpen((v) => !v)}
         onOpenNowPlaying={openNowPlaying}
+        onFilterArtist={filterByArtist}
       />
       <ErrorToast />
     </div>
