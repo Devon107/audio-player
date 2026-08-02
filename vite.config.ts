@@ -9,6 +9,13 @@ const host = process.env.TAURI_DEV_HOST
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // El webview de producción de Tauri no sirve los archivos como un servidor web con raíz "/" —
+  // los intercepta vía su propio protocolo interno. Con la base por defecto ("/"), index.html
+  // queda con rutas absolutas ("/assets/...") que ese protocolo no resuelve, y el build
+  // empaquetado (.deb/.AppImage/.msi/.dmg) arranca en blanco. Con rutas relativas sí funciona,
+  // y no afecta a `tauri dev` (Vite las sigue sirviendo igual desde su propio servidor).
+  base: './',
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
