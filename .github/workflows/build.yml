@@ -1,0 +1,80 @@
+name: Build desktop app
+
+# Compila Vinilo para Windows, macOS y Linux y deja los instaladores como artifacts
+# descargables. No crea ninguna GitHub Release — es solo para compilar y probar en cada
+# plataforma. Para publicar una release de verdad más adelante, agregar `tagName`/`releaseName`
+# a los inputs de `tauri-apps/tauri-action` (ver su README).
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            arch: aarch64
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            arch: x86_64
+          - platform: ubuntu-22.04
+            args: ''
+            arch: x86_64
+          - platform: windows-latest
+            args: ''
+            arch: x86_64
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cachear el build de Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # libasound2-dev es específico de este proyecto (rodio/cpal la necesitan para compilar el
+      # motor de audio en Linux) — no viene en la plantilla genérica de Tauri.
+      - name: Instalar dependencias del sistema (solo Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libasound2-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Instalar dependencias del frontend
+        run: bun install
+
+      - name: Compilar la app de Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+
+      - name: Subir los instaladores como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vinilo-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            src-tauri/target/**/release/bundle/**/*.deb
+            src-tauri/target/**/release/bundle/**/*.rpm
+            src-tauri/target/**/release/bundle/**/*.AppImage
+            src-tauri/target/**/release/bundle/**/*.msi
+            src-tauri/target/**/release/bundle/**/*.exe
+            src-tauri/target/**/release/bundle/**/*.dmg
+          if-no-files-found: error
