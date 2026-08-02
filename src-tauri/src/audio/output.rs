@@ -278,7 +278,11 @@ fn run_engine<R: Runtime>(
     // arranca a reproducir sola al abrir la app.
     if let Some(persisted) = load_persisted_queue(&db) {
         queue.set_items(persisted.items);
-        queue.set_shuffle(persisted.shuffle);
+        // `set_shuffle_flag`, no `set_shuffle`: acá solo hay que recordar que el modo aleatorio
+        // estaba activo, no disparar una mezcla nueva — los `items` ya vienen en el orden en que
+        // quedaron la sesión anterior, y todavía no hay pista actual establecida como para que
+        // "mezclar dejando la actual primero" tenga sentido.
+        queue.set_shuffle_flag(persisted.shuffle);
         queue.set_repeat(persisted.repeat);
 
         let restored_track = persisted
@@ -635,6 +639,79 @@ mod tests {
         println!(
             "Cola restaurada OK: pista actual = {}, posición = {:.2}s",
             state.items[1].path, state.position_secs
+        );
+
+        handle.send(AudioCommand::Stop).unwrap();
+    }
+
+    /// Prueba de humo manual: regresión del bug donde restaurar una cola guardada con aleatorio
+    /// activo volvía a mezclar el orden y cambiaba la pista actual por otra, en vez de restaurar
+    /// exactamente lo que había. Siembra una cola con `shuffle: true` y verifica que el orden y
+    /// la pista actual queden idénticos a lo guardado. Depende de hardware de audio real; se
+    /// corre a propósito con `cargo test -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn restoring_a_shuffled_queue_does_not_reshuffle_it() {
+        let fixtures =
+            std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures"));
+        let path = |name: &str| fixtures.join(name).to_string_lossy().into_owned();
+
+        let db = DbHandle::open_at(Path::new(":memory:")).unwrap();
+        let persisted = PersistedQueue {
+            items: vec![
+                QueueTrackInput {
+                    path: path("test-tone.mp3"),
+                    track_id: None,
+                },
+                QueueTrackInput {
+                    path: path("test-tone-no-tags.mp3"),
+                    track_id: None,
+                },
+                QueueTrackInput {
+                    path: path("test-tone-with-cover.mp3"),
+                    track_id: None,
+                },
+            ],
+            current_index: Some(2),
+            shuffle: true,
+            repeat: RepeatMode::Off,
+            position_secs: 0.0,
+        };
+        {
+            let conn = db.lock();
+            settings::set(
+                &conn,
+                QUEUE_STATE_KEY,
+                &serde_json::to_string(&persisted).unwrap(),
+            )
+            .unwrap();
+        }
+
+        let app = tauri::test::mock_app();
+        let handle = AudioEngineHandle::spawn(app.handle().clone(), EqualizerControl::new(), db);
+
+        sleep(Duration::from_millis(300));
+        let state = queue_state(&handle);
+        assert_eq!(state.items.len(), 3);
+        assert!(state.shuffle, "la bandera de aleatorio debe seguir activa");
+        assert_eq!(
+            state.items[0].path,
+            path("test-tone.mp3"),
+            "el orden guardado no debería cambiar al restaurar"
+        );
+        assert_eq!(
+            state.items[2].path,
+            path("test-tone-with-cover.mp3"),
+            "el orden guardado no debería cambiar al restaurar"
+        );
+        assert_eq!(
+            state.current_id,
+            Some(state.items[2].id),
+            "debería restaurar el índice 2 (test-tone-with-cover.mp3) como actual, no otra pista al azar"
+        );
+        println!(
+            "Restauración con shuffle OK: orden preservado, actual = {}",
+            state.items[2].path
         );
 
         handle.send(AudioCommand::Stop).unwrap();

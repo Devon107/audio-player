@@ -48,6 +48,8 @@
     },
     "trackCount_one": "{{count}} canción",
     "trackCount_other": "{{count}} canciones",
+    "trackCountTruncated": "Mostrando {{shown}} de {{total}} canciones",
+    "loadingMore": "Cargando más…",
     "scanSummary": "{{added}} agregadas, {{updated}} actualizadas, {{removed}} eliminadas",
     "filters": {
       "allArtists": "Todos los artistas",

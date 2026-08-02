@@ -4,6 +4,11 @@ import { onLibraryError, onLibraryScanProgress, onLibraryUpdated } from '../lib/
 import type { AlbumRecord, ArtistRecord, GenreRecord, ScanSummary, TrackRecord } from '../lib/types'
 
 const SEARCH_DEBOUNCE_MS = 250
+// Tamaño de cada tanda traída por `list_tracks`, tanto para la carga inicial como para cada
+// página siguiente que pide `loadMoreTracks`. No se cargan las decenas de miles de pistas de una
+// biblioteca grande de una sola vez (ver Fase 3 del plan) — en cambio, se van pidiendo de a esta
+// cantidad a medida que el usuario llega al final de la lista (scroll infinito).
+const TRACKS_PAGE_SIZE = 500
 
 interface LibraryFilterState {
   search: string
@@ -14,12 +19,18 @@ interface LibraryFilterState {
 
 interface LibraryStore {
   tracks: TrackRecord[]
+  /** Total de pistas que matchean el filtro actual, sin el tope de `list_tracks` — puede ser
+   * mayor a `tracks.length` en bibliotecas grandes (ver `refreshTracks`). */
+  totalTracks: number
   artists: ArtistRecord[]
   albums: AlbumRecord[]
   genres: GenreRecord[]
   watchedFolders: string[]
   filter: LibraryFilterState
   isLoadingTracks: boolean
+  /** Cargando la siguiente tanda de pistas por scroll infinito (distinto de `isLoadingTracks`,
+   * que es la recarga completa al cambiar filtro/búsqueda). */
+  isLoadingMoreTracks: boolean
   isScanning: boolean
   /** Conteo parcial del escaneo en curso, actualizado en vivo vía `library://scan-progress`.
    * `null` cuando no hay ningún escaneo corriendo. */
@@ -30,6 +41,7 @@ interface LibraryStore {
 
   init: () => Promise<void>
   refreshTracks: () => Promise<void>
+  loadMoreTracks: () => Promise<void>
   refreshSidebarLists: () => Promise<void>
   refreshWatchedFolders: () => Promise<void>
   setSearch: (search: string) => void
@@ -46,12 +58,14 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export const useLibraryStore = create<LibraryStore>((set, get) => ({
   tracks: [],
+  totalTracks: 0,
   artists: [],
   albums: [],
   genres: [],
   watchedFolders: [],
   filter: { search: '', artistId: null, albumId: null, genreId: null },
   isLoadingTracks: false,
+  isLoadingMoreTracks: false,
   isScanning: false,
   scanProgress: null,
   lastScanSummary: null,
@@ -83,21 +97,56 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
 
   refreshTracks: async () => {
     const { search, artistId, albumId, genreId } = get().filter
+    const filter = {
+      search: search.trim() || null,
+      artistId,
+      albumId,
+      genreId,
+    }
     set({ isLoadingTracks: true })
     try {
-      const tracks = await library.listTracks({
-        search: search.trim() || null,
-        artistId,
-        albumId,
-        genreId,
-        limit: 1000,
-        offset: 0,
-      })
-      set({ tracks })
+      // `listTracks` trae como mucho `TRACKS_PAGE_SIZE` filas por pedido (evita cargar decenas
+      // de miles de golpe a la UI), así que en bibliotecas grandes `tracks.length` por sí solo
+      // no alcanza para mostrar un conteo correcto — `countTracks` pide el total real aparte, sin
+      // ese tope. El resto de las pistas se van trayendo con `loadMoreTracks` a medida que el
+      // usuario llega al final de la lista.
+      const [tracks, totalTracks] = await Promise.all([
+        library.listTracks({ ...filter, limit: TRACKS_PAGE_SIZE, offset: 0 }),
+        library.countTracks(filter),
+      ])
+      set({ tracks, totalTracks })
     } catch (error) {
       set({ lastError: String(error) })
     } finally {
       set({ isLoadingTracks: false })
+    }
+  },
+
+  loadMoreTracks: async () => {
+    const { search, artistId, albumId, genreId } = get().filter
+    const { tracks, totalTracks, isLoadingTracks, isLoadingMoreTracks } = get()
+    if (isLoadingTracks || isLoadingMoreTracks || tracks.length >= totalTracks) return
+
+    set({ isLoadingMoreTracks: true })
+    try {
+      const nextPage = await library.listTracks({
+        search: search.trim() || null,
+        artistId,
+        albumId,
+        genreId,
+        limit: TRACKS_PAGE_SIZE,
+        offset: tracks.length,
+      })
+      // Chequeo contra una condición de carrera: si el filtro cambió mientras esta página
+      // estaba en vuelo, `refreshTracks` ya reemplazó `tracks` por una lista nueva — pegarle acá
+      // esta respuesta vieja mezclaría resultados de dos filtros distintos.
+      if (get().filter.search === search && get().filter.artistId === artistId) {
+        set((state) => ({ tracks: [...state.tracks, ...nextPage] }))
+      }
+    } catch (error) {
+      set({ lastError: String(error) })
+    } finally {
+      set({ isLoadingMoreTracks: false })
     }
   },
 

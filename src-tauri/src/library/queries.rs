@@ -62,6 +62,38 @@ pub fn list_tracks(conn: &Connection, filter: &TrackFilter) -> rusqlite::Result<
     rows.collect()
 }
 
+/// Total de pistas que matchean `filter`, sin `LIMIT`/`OFFSET`. `list_tracks` por sí solo no
+/// alcanza para mostrar un conteo correcto en bibliotecas grandes: el `LIMIT` de `list_tracks`
+/// evita traer miles de filas de golpe a la UI, pero eso significa que `tracks.length` en el
+/// frontend nunca refleja el total real una vez que la biblioteca supera ese límite.
+pub fn count_tracks(conn: &Connection, filter: &TrackFilter) -> rusqlite::Result<i64> {
+    let search_pattern = filter
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{}%", escape_like(s)));
+
+    conn.query_row(
+        "SELECT COUNT(*)
+         FROM tracks t
+         LEFT JOIN artists ar ON ar.id = t.artist_id
+         LEFT JOIN albums al ON al.id = t.album_id
+         WHERE (?1 IS NULL OR t.artist_id = ?1)
+           AND (?2 IS NULL OR t.album_id = ?2)
+           AND (?3 IS NULL OR t.genre_id = ?3)
+           AND (?4 IS NULL OR t.title LIKE ?4 ESCAPE '\\'
+                OR ar.name LIKE ?4 ESCAPE '\\' OR al.title LIKE ?4 ESCAPE '\\')",
+        params![
+            filter.artist_id,
+            filter.album_id,
+            filter.genre_id,
+            search_pattern,
+        ],
+        |row| row.get(0),
+    )
+}
+
 pub fn list_artists(conn: &Connection) -> rusqlite::Result<Vec<ArtistRecord>> {
     // `INNER JOIN` (no `LEFT JOIN`) a propósito: un artista sin ninguna pista restante (p. ej.
     // porque se quitó la carpeta que las contenía) no debería aparecer en el filtro. Esto además
@@ -228,5 +260,36 @@ mod tests {
         };
         let tracks = list_tracks(&conn, &filter).unwrap();
         assert_eq!(tracks.len(), 1);
+    }
+
+    #[test]
+    fn count_tracks_reflects_the_real_total_even_when_list_tracks_is_paginated() {
+        let db = seeded_db();
+        let conn = db.lock();
+        let filter = TrackFilter {
+            limit: Some(1),
+            offset: Some(0),
+            ..Default::default()
+        };
+
+        let tracks = list_tracks(&conn, &filter).unwrap();
+        assert_eq!(tracks.len(), 1, "list_tracks respeta el límite, como antes");
+
+        let total = count_tracks(&conn, &filter).unwrap();
+        assert_eq!(
+            total, 3,
+            "count_tracks debería devolver el total real, sin importar el límite"
+        );
+    }
+
+    #[test]
+    fn count_tracks_respects_the_same_filters_as_list_tracks() {
+        let db = seeded_db();
+        let conn = db.lock();
+        let filter = TrackFilter {
+            search: Some("Caratula".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(count_tracks(&conn, &filter).unwrap(), 1);
     }
 }

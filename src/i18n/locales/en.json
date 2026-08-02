@@ -48,6 +48,8 @@
     },
     "trackCount_one": "{{count}} track",
     "trackCount_other": "{{count}} tracks",
+    "trackCountTruncated": "Showing {{shown}} of {{total}} tracks",
+    "loadingMore": "Loading more…",
     "scanSummary": "{{added}} added, {{updated}} updated, {{removed}} removed",
     "filters": {
       "allArtists": "All artists",

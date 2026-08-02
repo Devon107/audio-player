@@ -66,6 +66,7 @@ export const library = {
   removeWatchedFolder: (path: string) => invoke<void>('remove_watched_folder', { path }),
   rescanLibrary: () => invoke<ScanSummary>('rescan_library'),
   listTracks: (filter: TrackFilter) => invoke<TrackRecord[]>('list_tracks', { filter }),
+  countTracks: (filter: TrackFilter) => invoke<number>('count_tracks', { filter }),
   listArtists: () => invoke<ArtistRecord[]>('list_artists'),
   listAlbums: (artistId: number | null) => invoke<AlbumRecord[]>('list_albums', { artistId }),
   listGenres: () => invoke<GenreRecord[]>('list_genres'),

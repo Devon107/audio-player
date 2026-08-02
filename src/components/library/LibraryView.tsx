@@ -1,14 +1,20 @@
-import { useEffect } from 'react'
+import { useEffect, type UIEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLibraryStore } from '../../store/libraryStore'
 import { SearchIcon } from '../common/Icons'
 import { WatchedFolders } from './WatchedFolders'
 import { TrackTable } from './TrackTable'
+import { truncateText } from '../../lib/format'
+
+const FILTER_OPTION_MAX_LENGTH = 40
 
 export function LibraryView() {
   const { t } = useTranslation()
   const init = useLibraryStore((s) => s.init)
   const tracks = useLibraryStore((s) => s.tracks)
+  const totalTracks = useLibraryStore((s) => s.totalTracks)
+  const loadMoreTracks = useLibraryStore((s) => s.loadMoreTracks)
+  const isLoadingMoreTracks = useLibraryStore((s) => s.isLoadingMoreTracks)
   const artists = useLibraryStore((s) => s.artists)
   const albums = useLibraryStore((s) => s.albums)
   const genres = useLibraryStore((s) => s.genres)
@@ -32,6 +38,15 @@ export function LibraryView() {
     void init()
   }, [init])
 
+  // Scroll infinito: `listTracks` solo trae una tanda por vez (ver `TRACKS_PAGE_SIZE` en el
+  // store), así que hay que pedir la siguiente a medida que el usuario se acerca al final de la
+  // lista — si no, con bibliotecas grandes nunca se ven las pistas más allá de la primera tanda.
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget
+    const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 300
+    if (nearBottom) void loadMoreTracks()
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-app-border px-4 py-3">
@@ -48,12 +63,12 @@ export function LibraryView() {
         <select
           value={filter.artistId ?? ''}
           onChange={(e) => setArtistFilter(e.target.value ? Number(e.target.value) : null)}
-          className="rounded-lg border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
+          className="w-36 shrink-0 truncate rounded-lg border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
         >
           <option value="">{t('library.filters.allArtists')}</option>
           {artists.map((artist) => (
             <option key={artist.id} value={artist.id}>
-              {artist.name} ({artist.track_count})
+              {truncateText(artist.name, FILTER_OPTION_MAX_LENGTH)} ({artist.track_count})
             </option>
           ))}
         </select>
@@ -61,12 +76,12 @@ export function LibraryView() {
         <select
           value={filter.albumId ?? ''}
           onChange={(e) => setAlbumFilter(e.target.value ? Number(e.target.value) : null)}
-          className="rounded-lg border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
+          className="w-36 shrink-0 truncate rounded-lg border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
         >
           <option value="">{t('library.filters.allAlbums')}</option>
           {albums.map((album) => (
             <option key={album.id} value={album.id}>
-              {album.title} ({album.track_count})
+              {truncateText(album.title, FILTER_OPTION_MAX_LENGTH)} ({album.track_count})
             </option>
           ))}
         </select>
@@ -74,12 +89,12 @@ export function LibraryView() {
         <select
           value={filter.genreId ?? ''}
           onChange={(e) => setGenreFilter(e.target.value ? Number(e.target.value) : null)}
-          className="rounded-lg border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
+          className="w-36 shrink-0 truncate rounded-lg border border-app-border bg-app-bg px-2 py-1.5 text-sm text-app-text focus:border-app-accent focus:outline-none"
         >
           <option value="">{t('library.filters.allGenres')}</option>
           {genres.map((genre) => (
             <option key={genre.id} value={genre.id}>
-              {genre.name} ({genre.track_count})
+              {truncateText(genre.name, FILTER_OPTION_MAX_LENGTH)} ({genre.track_count})
             </option>
           ))}
         </select>
@@ -106,7 +121,7 @@ export function LibraryView() {
 
       <WatchedFolders />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         {watchedFolders.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
             <p className="text-sm text-app-text">{t('library.noFolders')}</p>
@@ -122,12 +137,22 @@ export function LibraryView() {
             </p>
           </div>
         ) : (
-          <TrackTable tracks={tracks} emptyMessage={t('library.noTracks')} />
+          <>
+            <TrackTable tracks={tracks} emptyMessage={t('library.noTracks')} />
+            {isLoadingMoreTracks && (
+              <div className="flex items-center justify-center gap-2 py-4 text-xs text-app-text-muted">
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-app-border border-t-app-accent" />
+                {t('library.loadingMore')}
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div className="border-t border-app-border px-4 py-1.5 text-xs text-app-text-muted">
-        {t('library.trackCount', { count: tracks.length })}
+        {tracks.length < totalTracks
+          ? t('library.trackCountTruncated', { shown: tracks.length, total: totalTracks })
+          : t('library.trackCount', { count: totalTracks })}
       </div>
     </div>
   )

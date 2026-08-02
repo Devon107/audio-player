@@ -118,6 +118,11 @@ pub async fn list_tracks(
 }
 
 #[tauri::command]
+pub async fn count_tracks(db: State<'_, DbHandle>, filter: TrackFilter) -> Result<i64, String> {
+    queries::count_tracks(&db.lock(), &filter).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn list_artists(db: State<'_, DbHandle>) -> Result<Vec<ArtistRecord>, String> {
     queries::list_artists(&db.lock()).map_err(|e| e.to_string())
 }

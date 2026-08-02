@@ -22,6 +22,16 @@ export function coverAssetUrl(coverPath: string | null | undefined): string | nu
   return convertFileSrc(coverPath)
 }
 
+/// Trunca texto a `maxLength` caracteres, agregando "…" si lo corta. Los `<option>` nativos de
+/// un `<select>` no respetan `text-overflow: ellipsis` (limitación del control nativo, no algo
+/// que se pueda arreglar solo con CSS) — así que con nombres muy largos (artista/álbum/género)
+/// el popup desplegado se sale de la pantalla a menos que el texto se corte a mano antes de
+/// renderizarlo como opción.
+export function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`
+}
+
 /// El backend aplica la ganancia de volumen linealmente (multiplica cada muestra), pero el oído
 /// humano percibe el volumen logarítmicamente: con una ganancia lineal, un slider 0-1 se siente
 /// "sin cambios" en su primer tramo y luego se dispara de golpe cerca del máximo. Una curva

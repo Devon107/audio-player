@@ -88,6 +88,7 @@ pub fn run() {
             library::commands::remove_watched_folder,
             library::commands::rescan_library,
             library::commands::list_tracks,
+            library::commands::count_tracks,
             library::commands::list_artists,
             library::commands::list_albums,
             library::commands::list_genres,

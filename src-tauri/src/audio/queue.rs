@@ -153,6 +153,17 @@ impl QueueState {
         }
     }
 
+    /// Igual que `set_shuffle`, pero sin el efecto colateral de mezclar `items`. Pensado
+    /// exclusivamente para restaurar una cola ya guardada: esos `items` ya están en el orden
+    /// (mezclado o no) en el que quedaron la sesión anterior, y en ese momento todavía no hay
+    /// una pista actual establecida — si se llamara a `set_shuffle` normal, mezclaría toda la
+    /// lista sin ancla (sin pista actual a la cual anteponer) y el índice de "pista actual"
+    /// guardado terminaría apuntando a otra pista distinta en la lista recién remezclada.
+    /// Aleatorio solo debe disparar una mezcla nueva cuando el usuario lo activa desde la UI.
+    pub fn set_shuffle_flag(&mut self, enabled: bool) {
+        self.shuffle = enabled;
+    }
+
     pub fn set_repeat(&mut self, mode: RepeatMode) {
         self.repeat = mode;
     }
@@ -386,6 +397,22 @@ mod tests {
         );
         let after: HashSet<u64> = ids(&q).into_iter().collect();
         assert_eq!(after, original, "mezclar no debe perder ni duplicar ítems");
+    }
+
+    #[test]
+    fn set_shuffle_flag_does_not_reorder_items() {
+        let mut q = QueueState::default();
+        q.set_items(inputs(&["a.mp3", "b.mp3", "c.mp3", "d.mp3", "e.mp3"]));
+        let original_order: Vec<u64> = ids(&q);
+
+        q.set_shuffle_flag(true);
+
+        assert!(q.shuffle(), "la bandera sí debe quedar activada");
+        assert_eq!(
+            ids(&q),
+            original_order,
+            "a diferencia de set_shuffle, no debería reordenar nada"
+        );
     }
 
     #[test]
