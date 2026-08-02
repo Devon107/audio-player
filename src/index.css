@@ -1,0 +1,87 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-app-bg: #101115;
+  --color-app-surface: #17181d;
+  --color-app-surface-hover: #1f2128;
+  --color-app-border: #2a2c35;
+  --color-app-accent: #ff6a00;
+  --color-app-accent-hover: #ff8a3d;
+  --color-app-text: #e7e7ea;
+  --color-app-text-muted: #9497a3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  /* Sin esto, los controles nativos del navegador (select/option, scrollbars) se renderizan con
+     el esquema claro del sistema aunque el resto de la app sea oscuro, dejando el texto casi
+     ilegible sobre fondo blanco. */
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-app-bg);
+  color: var(--color-app-text);
+  overscroll-behavior: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-app-border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-app-surface-hover);
+}
+
+/* `accent-color` no se renderiza de forma confiable en el WebView de Tauri en todas las
+   plataformas, así que los sliders se estilizan a mano vía los pseudo-elementos con prefijo
+   `-webkit-` (los tres webviews de escritorio de Tauri —WebKitGTK, WKWebView y WebView2— derivan
+   de WebKit/Chromium y los soportan). El tramo ya "recorrido" del track se pinta del color de
+   acento leyendo la variable `--range-progress` (0%-100%), que cada slider setea inline según su
+   valor actual; si no se define, el track completo queda del color neutro. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-app-accent) var(--range-progress, 0%),
+    var(--color-app-border) var(--range-progress, 0%)
+  );
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 9999px;
+  background: var(--color-app-accent);
+}

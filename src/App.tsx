@@ -1,51 +1,46 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect, useState } from 'react'
+import { Sidebar } from './components/layout/Sidebar'
+import { PlayerBar } from './components/layout/PlayerBar'
+import { QueuePanel } from './components/layout/QueuePanel'
+import { LibraryView } from './components/library/LibraryView'
+import { PlaylistsView } from './components/playlists/PlaylistsView'
+import { EqualizerView } from './components/equalizer/EqualizerView'
+import { SettingsView } from './components/settings/SettingsView'
+import { ErrorToast } from './components/common/ErrorToast'
+import { usePlayerStore } from './store/playerStore'
+import { initI18n } from './i18n'
+
+export type ViewId = 'library' | 'playlists' | 'equalizer' | 'settings'
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [view, setView] = useState<ViewId>('library')
+  const [queueOpen, setQueueOpen] = useState(false)
+  const initPlayer = usePlayerStore((s) => s.init)
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    void initI18n()
+    void initPlayer()
+  }, [initPlayer])
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div className="flex h-screen flex-col overflow-hidden bg-app-bg text-app-text">
+      <div className="flex min-h-0 flex-1">
+        <Sidebar active={view} onSelect={setView} />
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+        <main className="min-w-0 flex-1 overflow-hidden">
+          {view === 'library' && <LibraryView />}
+          {view === 'playlists' && <PlaylistsView />}
+          {view === 'equalizer' && <EqualizerView />}
+          {view === 'settings' && <SettingsView />}
+        </main>
+
+        {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+      <PlayerBar queueOpen={queueOpen} onToggleQueue={() => setQueueOpen((v) => !v)} />
+      <ErrorToast />
+    </div>
+  )
 }
 
-export default App;
+export default App

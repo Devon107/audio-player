@@ -4,8 +4,14 @@ use std::time::Duration;
 
 use tauri::State;
 
+use crate::db::{settings, DbHandle};
+
+use super::equalizer::{EqPreset, EqStateSnapshot, EqualizerControl, NUM_BANDS};
 use super::output::{AudioCommand, AudioEngineHandle, QueueSnapshot};
 use super::queue::{QueueTrackInput, RepeatMode};
+
+const EQ_GAINS_KEY: &str = "eq_gains";
+const EQ_PRESET_KEY: &str = "eq_preset";
 
 #[tauri::command]
 pub fn load_track(
@@ -120,4 +126,57 @@ pub fn get_queue_state(state: State<AudioEngineHandle>) -> Result<QueueSnapshot,
     state.send(AudioCommand::GetQueueState(tx))?;
     rx.recv()
         .map_err(|_| "El motor de audio no respondió".to_string())
+}
+
+fn persist_eq(db: &DbHandle, gains: &[f32; NUM_BANDS], preset: EqPreset) -> Result<(), String> {
+    let gains_json = serde_json::to_string(gains).map_err(|e| e.to_string())?;
+    let preset_json = serde_json::to_string(&preset).map_err(|e| e.to_string())?;
+
+    let conn = db.lock();
+    settings::set(&conn, EQ_GAINS_KEY, &gains_json).map_err(|e| e.to_string())?;
+    settings::set(&conn, EQ_PRESET_KEY, &preset_json).map_err(|e| e.to_string())
+}
+
+/// Ajusta la ganancia de una sola banda (0..10). El preset guardado pasa a "custom" porque ya no
+/// coincide con ninguna curva con nombre.
+#[tauri::command]
+pub fn set_eq_band_gain(
+    eq: State<EqualizerControl>,
+    db: State<DbHandle>,
+    band: usize,
+    gain_db: f32,
+) -> Result<(), String> {
+    eq.set_gain(band, gain_db);
+    persist_eq(&db, &eq.gains_db(), EqPreset::Custom)
+}
+
+#[tauri::command]
+pub fn set_eq_preset(
+    eq: State<EqualizerControl>,
+    db: State<DbHandle>,
+    preset: EqPreset,
+) -> Result<(), String> {
+    let gains = preset
+        .gains_db()
+        .ok_or_else(|| "El preset 'custom' no tiene una curva propia para aplicar".to_string())?;
+    eq.set_gains(&gains);
+    persist_eq(&db, &gains, preset)
+}
+
+#[tauri::command]
+pub fn get_eq_state(
+    eq: State<EqualizerControl>,
+    db: State<DbHandle>,
+) -> Result<EqStateSnapshot, String> {
+    let preset = {
+        let conn = db.lock();
+        settings::get(&conn, EQ_PRESET_KEY)
+            .map_err(|e| e.to_string())?
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or(EqPreset::Flat)
+    };
+    Ok(EqStateSnapshot {
+        gains_db: eq.gains_db(),
+        preset,
+    })
 }

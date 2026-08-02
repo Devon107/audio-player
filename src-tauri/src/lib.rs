@@ -3,6 +3,7 @@ mod db;
 mod library;
 mod metadata;
 mod playlist;
+mod settings;
 
 use tauri::Manager;
 
@@ -18,8 +19,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(audio::AudioEngineHandle::spawn(app.handle().clone()));
-
             let db_handle = db::init(app.handle())?;
 
             let watched_folders: Vec<std::path::PathBuf> = {
@@ -38,6 +37,18 @@ pub fn run() {
                 watched_folders,
             );
 
+            let eq_control = audio::EqualizerControl::new();
+            if let Some(saved_gains) = db::settings::get(&db_handle.lock(), "eq_gains")?
+                .and_then(|json| serde_json::from_str(&json).ok())
+            {
+                eq_control.set_gains(&saved_gains);
+            }
+
+            app.manage(audio::AudioEngineHandle::spawn(
+                app.handle().clone(),
+                eq_control.clone(),
+            ));
+            app.manage(eq_control);
             app.manage(db_handle);
             app.manage(watcher_handle);
 
@@ -62,6 +73,9 @@ pub fn run() {
             audio::commands::set_shuffle,
             audio::commands::set_repeat_mode,
             audio::commands::get_queue_state,
+            audio::commands::set_eq_band_gain,
+            audio::commands::set_eq_preset,
+            audio::commands::get_eq_state,
             metadata::commands::read_track_metadata,
             metadata::commands::get_cover_art,
             library::commands::pick_and_add_folder,
@@ -83,6 +97,8 @@ pub fn run() {
             playlist::commands::play_playlist,
             playlist::commands::export_playlist_m3u,
             playlist::commands::import_playlist_m3u,
+            settings::commands::get_language_preference,
+            settings::commands::set_language_preference,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

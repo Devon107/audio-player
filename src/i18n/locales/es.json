@@ -1,0 +1,107 @@
+{
+  "app": {
+    "title": "Reproductor de Audio"
+  },
+  "nav": {
+    "library": "Biblioteca",
+    "playlists": "Playlists",
+    "equalizer": "Ecualizador",
+    "settings": "Ajustes"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "close": "Cerrar",
+    "delete": "Eliminar",
+    "rename": "Renombrar",
+    "create": "Crear",
+    "add": "Agregar",
+    "remove": "Quitar",
+    "loading": "Cargando…",
+    "search": "Buscar",
+    "unknownArtist": "Artista desconocido",
+    "unknownAlbum": "Álbum desconocido",
+    "unknownGenre": "Género desconocido",
+    "confirmDeleteTitle": "¿Eliminar \"{{name}}\"?",
+    "confirmDeleteBody": "Esta acción no se puede deshacer.",
+    "back": "Volver"
+  },
+  "library": {
+    "title": "Biblioteca",
+    "searchPlaceholder": "Buscar por título, artista o álbum…",
+    "addFolder": "Agregar carpeta",
+    "rescan": "Reescanear",
+    "rescanning": "Escaneando…",
+    "watchedFolders": "Carpetas vigiladas",
+    "noFolders": "Todavía no agregaste ninguna carpeta.",
+    "noFoldersHint": "Agregá una carpeta con música para empezar.",
+    "noTracks": "No se encontraron canciones.",
+    "scanningInProgress": "Buscando música en tus carpetas…",
+    "columns": {
+      "title": "Título",
+      "artist": "Artista",
+      "album": "Álbum",
+      "genre": "Género",
+      "duration": "Duración"
+    },
+    "trackCount_one": "{{count}} canción",
+    "trackCount_other": "{{count}} canciones",
+    "scanSummary": "{{added}} agregadas, {{updated}} actualizadas, {{removed}} eliminadas",
+    "filters": {
+      "allArtists": "Todos los artistas",
+      "allAlbums": "Todos los álbumes",
+      "allGenres": "Todos los géneros"
+    },
+    "addToQueue": "Agregar a la cola",
+    "addToPlaylist": "Agregar a playlist",
+    "playNow": "Reproducir"
+  },
+  "player": {
+    "noTrack": "Ninguna pista en reproducción",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "next": "Siguiente",
+    "previous": "Anterior",
+    "shuffle": "Aleatorio",
+    "repeat": "Repetir",
+    "repeatOff": "Sin repetición",
+    "repeatTrack": "Repetir pista",
+    "repeatQueue": "Repetir cola",
+    "volume": "Volumen",
+    "queue": "Cola de reproducción",
+    "queueEmpty": "La cola está vacía.",
+    "clearQueue": "Vaciar cola",
+    "nowPlaying": "Reproduciendo ahora"
+  },
+  "playlists": {
+    "title": "Playlists",
+    "empty": "Todavía no creaste ninguna playlist.",
+    "newPlaylist": "Nueva playlist",
+    "namePlaceholder": "Nombre de la playlist",
+    "trackCount_one": "{{count}} canción",
+    "trackCount_other": "{{count}} canciones",
+    "emptyPlaylist": "Esta playlist está vacía.",
+    "emptyPlaylistHint": "Agregá canciones desde la biblioteca.",
+    "playAll": "Reproducir todo",
+    "exportM3u": "Exportar como M3U",
+    "importM3u": "Importar M3U",
+    "removeFromPlaylist": "Quitar de la playlist"
+  },
+  "equalizer": {
+    "title": "Ecualizador",
+    "presets": {
+      "flat": "Plano",
+      "rock": "Rock",
+      "pop": "Pop",
+      "jazz": "Jazz",
+      "custom": "Personalizado"
+    },
+    "reset": "Restablecer"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "language": "Idioma",
+    "languageEnglish": "Inglés",
+    "languageSpanish": "Español"
+  }
+}

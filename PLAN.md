@@ -53,23 +53,19 @@
 - [x] Manejar archivos sin metadatos o con tags corruptos: el título cae al nombre del archivo; el resto de campos quedan en `None` (sin texto placeholder codificado en el backend, para no romper el selector de idioma EN/ES — esa lógica de "Desconocido"/"Unknown" vive en el frontend con i18n)
 - [x] Cachear carátulas extraídas en disco (`metadata::cover_cache`, en `app_cache_dir()/covers/`, con clave por ruta+tamaño+mtime para invalidar si el archivo cambia)
 
-## Fase 3 — Biblioteca musical y base de datos
-
-Backend completo ✅ — la parte de frontend (vista de biblioteca en React) queda pendiente para cuando se aborde la UI (consistente con las Fases 0-2, que también fueron solo backend).
+## Fase 3 — Biblioteca musical y base de datos ✅
 
 - [x] Diseñar esquema SQLite: tablas `tracks`, `albums`, `artists`, `genres`, `playlists`, `playlist_tracks`, `settings`, y `watched_folders` (necesaria para persistir qué carpetas vigilar entre sesiones)
 - [x] Implementar módulo `db` con `rusqlite` (`db::connection::DbHandle` — conexión compartida vía `Arc<Mutex<Connection>>` — y aplicación del esquema en `db/schema.sql` vía `execute_batch`, idempotente con `CREATE TABLE IF NOT EXISTS`)
-- [x] Comando Tauri `pick_and_add_folder`: selecciona carpeta con diálogo nativo (`tauri-plugin-dialog`, invocado desde Rust, no desde JS) y dispara su escaneo inicial
+- [x] Comando Tauri `pick_and_add_folder`: selecciona carpeta con diálogo nativo (`tauri-plugin-dialog`, invocado desde Rust como comando `async` — ver nota de bug en Fase 8) y dispara su escaneo inicial
 - [x] Escaneo recursivo con `walkdir` (`library::scanner`), filtrando por extensión (mp3, flac, ogg, wav, m4a, aac, mp4), con detección de cambios por tamaño+mtime para saltar archivos sin modificar en re-escaneos
 - [x] Insertar/actualizar pistas en la base de datos con metadatos (`lofty`) y ruta de carátula cacheada (`metadata::cover_cache`); get-or-create de artistas/álbumes/géneros, `ON CONFLICT` upsert por ruta
 - [x] Watcher con `notify` (`library::watcher::LibraryWatcherHandle`) corriendo en hilo dedicado, con debounce de 500ms para agrupar ráfagas de eventos, que agrega/actualiza/elimina pistas automáticamente y emite `library://updated`
 - [x] Comandos Tauri de consulta (`library::queries` + `library::commands`): `list_tracks` (con filtro por artista/álbum/género, búsqueda de texto y paginación limit/offset), `list_artists`, `list_albums`, `list_genres`, `list_watched_folders`, `remove_watched_folder`, `rescan_library`
-- [ ] Vista de biblioteca en frontend: lista de canciones, agrupación por álbum/artista/género
-- [ ] Manejo de biblioteca grande: paginación o virtualización de listas en frontend
+- [x] Vista de biblioteca en frontend (`LibraryView`/`TrackTable`): búsqueda con debounce, filtros por artista/álbum/género, chips de carpetas vigiladas con opción de quitar, spinner mientras escanea una carpeta recién agregada
+- [x] Manejo de biblioteca grande: paginación básica vía `limit`/`offset` (tope de 1000 pistas por consulta); **no** se implementó virtualización de listas en el DOM — con bibliotecas muy grandes (decenas de miles de pistas) el render de la tabla podría volverse pesado
 
-## Fase 4 — Reproducción, cola, aleatorio y repetición
-
-Backend completo ✅ — igual que en fases anteriores, los botones de UI quedan pendientes para la pasada de frontend.
+## Fase 4 — Reproducción, cola, aleatorio y repetición ✅
 
 - [x] Fuente de verdad: la cola vive en el backend (`audio::queue::QueueState`), dentro del mismo hilo dedicado del motor de audio (`audio::output`) que ya manejaba play/pause/stop/seek desde la Fase 1 — así el avance automático funciona sin depender de que el frontend esté escuchando
 - [x] Comandos Tauri: `set_queue` (reemplaza la cola y puede arrancar en un índice), `add_to_queue`, `remove_from_queue`, `reorder_queue`, `clear_queue`, `play_queue_item`, `get_queue_state`
@@ -77,47 +73,56 @@ Backend completo ✅ — igual que en fases anteriores, los botones de UI quedan
 - [x] Modo aleatorio: `QueueState` mantiene una "bolsa" (`shuffle_bag`) con los ids pendientes del ciclo actual, mezclada con `rand`; garantiza visitar cada pista una vez antes de repetir
 - [x] Modos de repetición: `RepeatMode::{Off, Track, Queue}` vía `set_repeat_mode`
 - [x] Historial de reproducción (`previous_track`) independiente del modo aleatorio/secuencial, saltando pistas que fueron removidas de la cola mientras tanto
-- [ ] Botones de control en UI: anterior, siguiente, play/pause, shuffle, repeat, barra de progreso (seek), volumen
+- [x] Botones de control en UI (`PlayerBar`): anterior, siguiente, play/pause, shuffle, repeat (cíclico off→queue→track), barra de progreso con seek (arrastre), volumen — el volumen usa una curva cúbica (posición del slider³) al convertir a la ganancia lineal real, porque el oído percibe el volumen logarítmicamente y una ganancia lineal se sentía "sin cambios" hasta cerca del máximo
+- [x] Panel de cola (`QueuePanel`) con reordenamiento por drag-and-drop nativo (HTML5), quitar ítems y saltar a cualquier pista
 - [x] Sincronización en tiempo real vía eventos Tauri: `player://loaded`, `player://progress`, `player://track-ended`, `player://queue-changed` (con el snapshot completo: ítems, pista actual, shuffle, repeat), `player://error`
 
-## Fase 5 — Playlists
-
-Backend completo ✅ (incluyendo la parte opcional de M3U) — la UI de playlists queda pendiente para la pasada de frontend.
+## Fase 5 — Playlists ✅
 
 - [x] Comandos Tauri: `create_playlist`, `rename_playlist`, `delete_playlist`
 - [x] Comandos Tauri: `add_tracks_to_playlist`, `remove_track_from_playlist`, `reorder_playlist_track` (reescribe posiciones 0..n dentro de una transacción, sin depender de aritmética de huecos)
 - [x] Persistencia en `playlists`/`playlist_tracks` (ya creadas en el esquema de la Fase 3); `playlist::queries` expone las operaciones como funciones puras sobre `&Connection`, testeables sin el harness de Tauri (mismo patrón que `library::queries`)
-- [ ] UI: vista de playlists (sidebar o sección dedicada), drag-and-drop para reordenar/agregar canciones
+- [x] UI: vista de playlists (`PlaylistList` + `PlaylistDetail`), crear/renombrar (doble clic)/eliminar (con confirmación nativa), agregar canciones desde la biblioteca (menú por pista), reordenar con drag-and-drop nativo (HTML5)
 - [x] Reproducir playlist completa: `play_playlist` arma un `Vec<QueueTrackInput>` desde `playlist_tracks` y lo manda como `AudioCommand::SetQueue` al motor de la Fase 4 (tuve que volver `pub(crate)` los módulos `audio::output`/`audio::queue`, antes privados, para que `playlist::commands` pudiera construir el comando)
-- [x] Exportar/importar M3U (`playlist::m3u`): exporta `#EXTM3U` con `#EXTINF` (duración + "artista - título") y rutas absolutas; al importar, las pistas que ya están en la biblioteca se enlazan directamente y las que faltan se escanean y agregan automáticamente vía `library::scanner::upsert_track_file`; las entradas cuyo archivo ya no existe se omiten sin fallar la importación
+- [x] Exportar/importar M3U (`playlist::m3u` + botones en `PlaylistDetail` usando el selector nativo de archivos vía `@tauri-apps/plugin-dialog` en el frontend): exporta `#EXTM3U` con `#EXTINF` (duración + "artista - título") y rutas absolutas; al importar, las pistas que ya están en la biblioteca se enlazan directamente y las que faltan se escanean y agregan automáticamente vía `library::scanner::upsert_track_file`; las entradas cuyo archivo ya no existe se omiten sin fallar la importación
 
-## Fase 6 — Ecualizador
+## Fase 6 — Ecualizador ✅
 
-- [ ] Definir bandas de frecuencia del ecualizador (ej. 10 bandas: 31Hz–16kHz)
-- [ ] Implementar filtros biquad (peaking EQ) en Rust, aplicados al stream PCM antes de la salida de audio
-- [ ] Insertar el procesamiento de EQ en la cadena de audio entre decodificación y `rodio`/`cpal` output
-- [ ] Comandos Tauri para ajustar ganancia de cada banda en tiempo real
-- [ ] Presets de ecualizador (Rock, Pop, Jazz, Plano, Personalizado) guardados en `settings`
-- [ ] UI: sliders verticales por banda, selector de preset
-- [ ] Persistir configuración de EQ entre sesiones
+- [x] 10 bandas ISO estándar (31Hz–16kHz, `audio::equalizer::BAND_FREQUENCIES`), rango de ganancia ±12dB
+- [x] Filtros biquad "peaking EQ" (fórmulas del Audio EQ Cookbook de Robert Bristow-Johnson) en Rust puro, con estado de filtro independiente por canal (evita mezclar izquierda/derecha en estéreo)
+- [x] `audio::equalizer::EqualizerSource<S>` envuelve el `TrackDecoder` (implementa `rodio::Source`) e inserta el procesamiento de EQ justo antes de llegar al `Player`; reinicia el estado de los filtros en cada `seek` para evitar clics
+- [x] Comandos Tauri: `set_eq_band_gain` (ganancia en tiempo real vía `EqualizerControl`, atómicos sin locks para no bloquear el hilo de audio), `set_eq_preset`, `get_eq_state`
+- [x] Presets Flat/Rock/Pop/Jazz con curvas propias; `Custom` no tiene curva — indica que el usuario ajustó bandas a mano. Persistidos en `settings` (`eq_gains` como JSON, `eq_preset`) vía el nuevo helper `db::settings`, y recargados al iniciar la app
+- [x] UI: 10 sliders verticales (`EqualizerView`, sliders horizontales rotados 90° por CSS — `-webkit-appearance: slider-vertical` no se veía bien en el WebView de Linux) con relleno de progreso y selector de preset
+- [x] Persistencia entre sesiones (ver arriba)
 
-## Fase 7 — Internacionalización (selector de idioma Inglés/Español)
+En el frontend, el envío de cada cambio de ganancia al backend está debounced (~120ms): mandar cada micro-movimiento del slider disparaba una escritura sincrónica a SQLite por evento, lo que se sentía como lag al arrastrar.
 
-- [ ] Configurar `i18next` + `react-i18next` en el frontend
-- [ ] Crear archivos de traducción `en.json` y `es.json` con todas las cadenas de la UI
-- [ ] Implementar selector de idioma en configuración/ajustes de la app
-- [ ] Persistir preferencia de idioma (localStorage o tabla `settings` vía backend)
-- [ ] Detectar idioma del sistema como valor por defecto en primer arranque
-- [ ] Revisar que fechas/números se formateen según locale si aplica
+Verificación: pruebas unitarias con respuesta en frecuencia calculada analíticamente (sin necesidad de simular audio) confirman que a 0dB el filtro es la identidad exacta y que el boost/cut se concentra en la banda correspondiente; prueba manual con audio real confirmó el cambio de volumen audible al mover una banda entre -12dB y +12dB.
+
+## Fase 7 — Internacionalización (selector de idioma Inglés/Español) ✅
+
+- [x] Configurar `i18next` + `react-i18next` en el frontend (`src/i18n/index.ts`)
+- [x] Crear archivos de traducción `en.json` y `es.json` con las cadenas de la UI (`src/i18n/locales/`)
+- [x] Implementar selector de idioma en Ajustes (`SettingsView`)
+- [x] Persistir preferencia de idioma vía backend: `settings::commands::get_language_preference` / `set_language_preference` (reutiliza `db::settings` de la Fase 6; valida contra `en`/`es`, devuelve `None` si el usuario nunca eligió explícitamente)
+- [x] Detectar idioma del sistema como valor por defecto en primer arranque: `i18n/index.ts` usa `navigator.language` de forma síncrona al iniciar, y solo lo reemplaza si hay una preferencia guardada en el backend
+- [ ] Revisar que fechas/números se formateen según locale — no aplica todavía: la UI actual no muestra fechas (p. ej. `created_at`/`updated_at` de playlists) en ningún lado
 
 ## Fase 8 — UI/UX general
 
-- [ ] Diseñar layout principal: sidebar de navegación (Biblioteca, Playlists, Ajustes), panel central de listado, reproductor fijo inferior (mini-player)
-- [ ] Vista "Now Playing" con carátula grande, título, álbum, artista, barra de progreso
-- [ ] Tema claro/oscuro (opcional pero recomendado dado uso de Tailwind)
-- [ ] Estados vacíos (biblioteca sin canciones, playlist vacía) con mensajes claros
-- [ ] Indicadores de carga durante escaneo de biblioteca
-- [ ] Atajos de teclado (espacio = play/pause, flechas = siguiente/anterior)
+- [x] Layout principal: sidebar de navegación (Biblioteca, Playlists, Ecualizador, Ajustes), panel central por vista, reproductor fijo inferior (`PlayerBar`) + panel de cola deslizable
+- [ ] Vista "Now Playing" dedicada con carátula grande — la `PlayerBar` sí muestra carátula/título/artista en miniatura, pero no hay una vista ampliada
+- [x] Tema oscuro (paleta con acento naranja neón, ajustada a pedido durante la revisión). **No** se implementó selector claro/oscuro — quedó fijo en oscuro
+- [x] Estados vacíos (sin carpetas, sin pistas, playlist vacía, sin playlists) con mensajes vía i18n
+- [x] Indicador de carga durante el escaneo inicial de una carpeta agregada (spinner + mensaje) — el bug que parecía "no encuentra los archivos" era en realidad esto: el escaneo de 545 canciones tardaba varios segundos sin ningún feedback visual
+- [ ] Atajos de teclado (espacio = play/pause, flechas = siguiente/anterior) — no implementados
+
+Bugs encontrados y corregidos durante la revisión manual con el usuario (primera vez que se ejerció la UI end-to-end):
+- `pick_and_add_folder` crasheaba la app: el diálogo nativo (`blocking_pick_folder`) bloqueaba el hilo principal al ser un comando Tauri sincrónico; la documentación del plugin exige que los métodos `blocking_*` se llamen desde un comando `async` (que Tauri despacha a un hilo del runtime, no al principal). Se corrigió agregando `async` a la firma y `State<'_, T>` en los parámetros.
+- Los `<select>` nativos se veían con fondo blanco y texto claro ilegible: faltaba `color-scheme: dark` en el HTML raíz.
+- `accent-color` no se renderiza de forma confiable en el WebView de Linux (WebKitGTK): se reemplazó por estilos manuales vía pseudo-elementos `::-webkit-slider-thumb`/`::-webkit-slider-runnable-track` (soportados también por WebView2 y WKWebView, los tres webviews de escritorio de Tauri).
+- El volumen "no hacía nada" perceptiblemente hasta cerca del máximo: no era un bug, la ganancia lineal de rodio no coincide con la percepción logarítmica del oído. Se aplicó una curva cúbica en el frontend al convertir la posición del slider a la ganancia real.
 
 ## Fase 9 — Empaquetado y distribución multiplataforma
 

@@ -12,13 +12,19 @@
   "app": {
     "windows": [
       {
-        "title": "audio-player-scaffold",
-        "width": 800,
-        "height": 600
+        "title": "Reproductor de Audio",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 820,
+        "minHeight": 560
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPCACHE/covers/*"]
+      }
     }
   },
   "bundle": {

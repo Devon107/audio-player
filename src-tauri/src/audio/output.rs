@@ -8,6 +8,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::decoder::TrackDecoder;
+use super::equalizer::{EqualizerControl, EqualizerSource};
 use super::queue::{QueueState, QueueTrack, QueueTrackInput, RepeatMode};
 
 /// Intervalo al que se emite el progreso de reproducción y se revisa si la pista terminó.
@@ -83,9 +84,9 @@ pub struct AudioEngineHandle {
 impl AudioEngineHandle {
     /// Genérico sobre `R: Runtime` para poder probarse con `tauri::test::mock_app()`, que usa
     /// `MockRuntime` en lugar del runtime `Wry` por defecto.
-    pub fn spawn<R: Runtime + 'static>(app: AppHandle<R>) -> Self {
+    pub fn spawn<R: Runtime + 'static>(app: AppHandle<R>, eq: EqualizerControl) -> Self {
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || run_engine(rx, app));
+        thread::spawn(move || run_engine(rx, app, eq));
         Self { tx }
     }
 
@@ -96,12 +97,18 @@ impl AudioEngineHandle {
     }
 }
 
-/// Intenta cargar y reproducir `path`. Devuelve la duración reportada si tuvo éxito.
-fn load_and_play(player: &Player, path: &Path, autoplay: bool) -> Result<Option<Duration>, String> {
+/// Intenta cargar y reproducir `path`, pasando la señal decodificada por el ecualizador antes de
+/// llegar al `Player`. Devuelve la duración reportada si tuvo éxito.
+fn load_and_play(
+    player: &Player,
+    path: &Path,
+    autoplay: bool,
+    eq: &EqualizerControl,
+) -> Result<Option<Duration>, String> {
     let decoder = TrackDecoder::open(path)?;
     let duration = decoder.total_duration_hint();
     player.clear();
-    player.append(decoder);
+    player.append(EqualizerSource::new(decoder, eq.clone()));
     if autoplay {
         player.play();
     } else {
@@ -140,7 +147,11 @@ fn handle_load_result<R: Runtime>(
 /// Bucle principal del motor de audio. Vive en su propio hilo del sistema operativo porque el
 /// `cpal::Stream` que mantiene abierto el dispositivo de salida no es `Send`/`Sync` en todas las
 /// plataformas, por lo que no puede vivir directamente en el estado gestionado por Tauri.
-fn run_engine<R: Runtime>(rx: mpsc::Receiver<AudioCommand>, app: AppHandle<R>) {
+fn run_engine<R: Runtime>(
+    rx: mpsc::Receiver<AudioCommand>,
+    app: AppHandle<R>,
+    eq: EqualizerControl,
+) {
     let sink_handle = match DeviceSinkBuilder::open_default_sink() {
         Ok(handle) => handle,
         Err(e) => {
@@ -163,7 +174,7 @@ fn run_engine<R: Runtime>(rx: mpsc::Receiver<AudioCommand>, app: AppHandle<R>) {
         ($track:expr) => {
             match $track {
                 Some(track) => handle_load_result(
-                    load_and_play(&player, Path::new(&track.path), true),
+                    load_and_play(&player, Path::new(&track.path), true, &eq),
                     &app,
                     &mut duration,
                     &mut has_track,
@@ -185,7 +196,7 @@ fn run_engine<R: Runtime>(rx: mpsc::Receiver<AudioCommand>, app: AppHandle<R>) {
                 queue.clear();
                 queue_changed = true;
                 handle_load_result(
-                    load_and_play(&player, &path, autoplay),
+                    load_and_play(&player, &path, autoplay, &eq),
                     &app,
                     &mut duration,
                     &mut has_track,
@@ -223,7 +234,7 @@ fn run_engine<R: Runtime>(rx: mpsc::Receiver<AudioCommand>, app: AppHandle<R>) {
 
                 match start_track {
                     Some(track) => handle_load_result(
-                        load_and_play(&player, Path::new(&track.path), autoplay),
+                        load_and_play(&player, Path::new(&track.path), autoplay, &eq),
                         &app,
                         &mut duration,
                         &mut has_track,
@@ -389,7 +400,7 @@ mod tests {
         let path = |name: &str| fixtures.join(name).to_string_lossy().into_owned();
 
         let app = tauri::test::mock_app();
-        let handle = AudioEngineHandle::spawn(app.handle().clone());
+        let handle = AudioEngineHandle::spawn(app.handle().clone(), EqualizerControl::new());
 
         // Pista 1 dura ~2s, para que el avance automático a la pista 2 ocurra pronto.
         let items = vec![
@@ -442,5 +453,79 @@ mod tests {
 
         handle.send(AudioCommand::Stop).unwrap();
         println!("Prueba de cola completada.");
+    }
+
+    /// Prueba de humo manual: reproduce el tono de prueba y alterna el volumen entre silencio,
+    /// bajo y alto, para confirmar audiblemente que `Player::set_volume` (vía `AudioCommand::
+    /// SetVolume`) sí afecta el audio real. Diagnóstico puntual para un reporte de que el slider
+    /// de volumen del frontend no cambiaba nada.
+    #[test]
+    #[ignore]
+    fn set_volume_is_audible() {
+        let fixture = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/test-tone.mp3"
+        ));
+
+        let app = tauri::test::mock_app();
+        let handle = AudioEngineHandle::spawn(app.handle().clone(), EqualizerControl::new());
+
+        handle
+            .send(AudioCommand::Load {
+                path: fixture,
+                autoplay: true,
+            })
+            .unwrap();
+
+        println!("Volumen normal (1.0) por 2s...");
+        sleep(Duration::from_secs(2));
+
+        println!("Volumen en 0.0 (silencio) por 2s...");
+        handle.send(AudioCommand::SetVolume(0.0)).unwrap();
+        sleep(Duration::from_secs(2));
+
+        println!("Volumen en 2.0 (el doble) por 2s...");
+        handle.send(AudioCommand::SetVolume(2.0)).unwrap();
+        sleep(Duration::from_secs(2));
+
+        handle.send(AudioCommand::Stop).unwrap();
+        println!("Prueba de volumen completada.");
+    }
+
+    /// Diagnóstico aislado: usa `Player` directamente (sin pasar por `AudioCommand`/
+    /// `run_engine`) para descartar que el bug esté en el despacho de comandos del motor en vez
+    /// de en el propio `Player::set_volume` de rodio.
+    #[test]
+    #[ignore]
+    fn set_volume_direct_player_is_audible() {
+        let fixture = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/test-tone.mp3"
+        ));
+
+        let sink_handle =
+            DeviceSinkBuilder::open_default_sink().expect("debería abrir el dispositivo de audio");
+        let player = Player::connect_new(sink_handle.mixer());
+
+        let decoder = TrackDecoder::open(&fixture).expect("debería decodificar el mp3 de prueba");
+        player.append(decoder);
+        player.play();
+
+        println!("volume() = {}", player.volume());
+        println!("Volumen normal (1.0) por 2s...");
+        sleep(Duration::from_secs(2));
+
+        player.set_volume(0.0);
+        println!("volume() tras set_volume(0.0) = {}", player.volume());
+        println!("Volumen en 0.0 (silencio) por 2s...");
+        sleep(Duration::from_secs(2));
+
+        player.set_volume(3.0);
+        println!("volume() tras set_volume(3.0) = {}", player.volume());
+        println!("Volumen en 3.0 (el triple) por 2s...");
+        sleep(Duration::from_secs(2));
+
+        player.stop();
+        println!("Prueba de volumen directa completada.");
     }
 }

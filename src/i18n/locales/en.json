@@ -1,0 +1,107 @@
+{
+  "app": {
+    "title": "Audio Player"
+  },
+  "nav": {
+    "library": "Library",
+    "playlists": "Playlists",
+    "equalizer": "Equalizer",
+    "settings": "Settings"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "close": "Close",
+    "delete": "Delete",
+    "rename": "Rename",
+    "create": "Create",
+    "add": "Add",
+    "remove": "Remove",
+    "loading": "Loading…",
+    "search": "Search",
+    "unknownArtist": "Unknown artist",
+    "unknownAlbum": "Unknown album",
+    "unknownGenre": "Unknown genre",
+    "confirmDeleteTitle": "Delete \"{{name}}\"?",
+    "confirmDeleteBody": "This action cannot be undone.",
+    "back": "Back"
+  },
+  "library": {
+    "title": "Library",
+    "searchPlaceholder": "Search by title, artist, or album…",
+    "addFolder": "Add folder",
+    "rescan": "Rescan",
+    "rescanning": "Scanning…",
+    "watchedFolders": "Watched folders",
+    "noFolders": "You haven't added any folders yet.",
+    "noFoldersHint": "Add a folder with music to get started.",
+    "noTracks": "No tracks found.",
+    "scanningInProgress": "Looking for music in your folders…",
+    "columns": {
+      "title": "Title",
+      "artist": "Artist",
+      "album": "Album",
+      "genre": "Genre",
+      "duration": "Duration"
+    },
+    "trackCount_one": "{{count}} track",
+    "trackCount_other": "{{count}} tracks",
+    "scanSummary": "{{added}} added, {{updated}} updated, {{removed}} removed",
+    "filters": {
+      "allArtists": "All artists",
+      "allAlbums": "All albums",
+      "allGenres": "All genres"
+    },
+    "addToQueue": "Add to queue",
+    "addToPlaylist": "Add to playlist",
+    "playNow": "Play"
+  },
+  "player": {
+    "noTrack": "No track playing",
+    "play": "Play",
+    "pause": "Pause",
+    "next": "Next",
+    "previous": "Previous",
+    "shuffle": "Shuffle",
+    "repeat": "Repeat",
+    "repeatOff": "Repeat off",
+    "repeatTrack": "Repeat track",
+    "repeatQueue": "Repeat queue",
+    "volume": "Volume",
+    "queue": "Playback queue",
+    "queueEmpty": "The queue is empty.",
+    "clearQueue": "Clear queue",
+    "nowPlaying": "Now playing"
+  },
+  "playlists": {
+    "title": "Playlists",
+    "empty": "You haven't created any playlists yet.",
+    "newPlaylist": "New playlist",
+    "namePlaceholder": "Playlist name",
+    "trackCount_one": "{{count}} track",
+    "trackCount_other": "{{count}} tracks",
+    "emptyPlaylist": "This playlist is empty.",
+    "emptyPlaylistHint": "Add songs from your library.",
+    "playAll": "Play all",
+    "exportM3u": "Export as M3U",
+    "importM3u": "Import M3U",
+    "removeFromPlaylist": "Remove from playlist"
+  },
+  "equalizer": {
+    "title": "Equalizer",
+    "presets": {
+      "flat": "Flat",
+      "rock": "Rock",
+      "pop": "Pop",
+      "jazz": "Jazz",
+      "custom": "Custom"
+    },
+    "reset": "Reset"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageEnglish": "English",
+    "languageSpanish": "Spanish"
+  }
+}

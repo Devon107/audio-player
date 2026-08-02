@@ -14,11 +14,17 @@ use super::{queries, scanner};
 
 /// Abre el selector nativo de carpetas, y si el usuario elige una, la agrega a las carpetas
 /// vigiladas y dispara un escaneo inicial en segundo plano.
+///
+/// Tiene que ser un comando `async`: `blocking_pick_folder()` bloquea el hilo actual esperando a
+/// que el diálogo nativo (GTK en Linux) se muestre en el hilo principal y responda. Si este
+/// comando corriera de forma sincrónica en el hilo principal, se produciría un interbloqueo o
+/// crash — la documentación del plugin pide explícitamente usar `blocking_*` solo desde comandos
+/// `async`, que Tauri despacha a un hilo del runtime en lugar del hilo principal.
 #[tauri::command]
-pub fn pick_and_add_folder(
+pub async fn pick_and_add_folder(
     app: AppHandle,
-    db: State<DbHandle>,
-    watcher: State<LibraryWatcherHandle>,
+    db: State<'_, DbHandle>,
+    watcher: State<'_, LibraryWatcherHandle>,
 ) -> Result<Option<String>, String> {
     let Some(file_path) = app.dialog().file().blocking_pick_folder() else {
         return Ok(None);
