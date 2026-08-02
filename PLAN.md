@@ -135,7 +135,9 @@ Bugs encontrados y corregidos durante la revisión manual con el usuario (primer
 
 ## Fase 9 — Empaquetado y distribución multiplataforma
 
-- [ ] Configurar `tauri.conf.json` (íconos, identificador de bundle, permisos de filesystem/dialog)
+- [x] Nombre e ícono de la app: se eligió el nombre "Vinilo" y un ícono propio (disco con surcos + play, en el mismo naranja neón del tema) generado con `tauri icon` a partir de un SVG fuente, cubriendo Windows/macOS/Linux (`icon.ico`/`icon.icns`/PNGs) — se descartaron los sets de iOS/Android que también genera por defecto, ya que el proyecto no apunta a mobile. `productName` y el título de ventana se actualizaron en `tauri.conf.json`; el `identifier` (`com.audioplayer.app`) se dejó sin tocar a propósito, porque cambiarlo reubicaría `app_data_dir`/`app_cache_dir` (SQLite + carátulas cacheadas) y el usuario "perdería" su biblioteca ya escaneada en el próximo arranque
+- [x] Bug encontrado al probar en Linux/GNOME (Wayland): el ícono no aparecía en el dock del sistema aunque la app ya lo tuviera embebido. Causa: Tauri no asigna un `app_id` de GTK a la ventana salvo que se habilite explícitamente (`app.enableGTKAppId`, `false` por defecto) — sin eso, GNOME no tiene con qué asociar la ventana a ningún ícono, exista o no un `.desktop` file. Se activó `enableGTKAppId` en `tauri.conf.json`. Además, para que el dock reconozca la app durante `tauri dev` (sin un build empaquetado real, que es lo que instalaría esto automáticamente en producción vía Fase 9), se instaló a mano un `.desktop` file en `~/.local/share/applications/` apuntando al binario de desarrollo y al ícono — es solo una conveniencia local para probar, no parte del repo
+- [ ] Configurar el resto de `tauri.conf.json` (permisos de filesystem/dialog)
 - [ ] Generar builds para Windows (.msi/.exe), macOS (.dmg), Linux (.AppImage/.deb)
 - [ ] Verificar permisos de acceso a sistema de archivos en cada plataforma
 - [ ] Probar rendimiento de audio (latencia, glitches) en cada SO

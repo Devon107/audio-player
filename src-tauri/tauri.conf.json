@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "audio-player",
+  "productName": "Vinilo",
   "version": "0.1.0",
   "identifier": "com.audioplayer.app",
   "build": {
@@ -10,9 +10,10 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "enableGTKAppId": true,
     "windows": [
       {
-        "title": "Reproductor de Audio",
+        "title": "Vinilo - Music Player",
         "width": 1100,
         "height": 720,
         "minWidth": 820,
@@ -30,6 +31,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "homepage": "https://github.com/Devon107/audio-player",
+    "category": "Music",
+    "shortDescription": "Reproductor de audio MP3 con biblioteca, playlists y ecualizador",
+    "longDescription": "Vinilo es un reproductor de audio MP3 multiplataforma: biblioteca musical con búsqueda y filtros por artista/álbum/género, playlists, cola de reproducción con aleatorio y repetición, ecualizador de 10 bandas, y controles nativos de medios del sistema operativo.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
