@@ -100,4 +100,6 @@ export const playlists = {
 export const settings = {
   getLanguage: () => invoke<string | null>('get_language_preference'),
   setLanguage: (language: string) => invoke<void>('set_language_preference', { language }),
+  getVolume: () => invoke<number | null>('get_volume_preference'),
+  setVolume: (volume: number) => invoke<void>('set_volume_preference', { volume }),
 }

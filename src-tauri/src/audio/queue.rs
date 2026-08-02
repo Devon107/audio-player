@@ -14,8 +14,10 @@ pub struct QueueTrack {
 }
 
 /// Lo que recibe la cola desde el frontend para agregar una pista (sin `id`, que es asignado
-/// internamente).
-#[derive(Debug, Clone, Deserialize)]
+/// internamente). También `Serialize` para poder persistir la cola en `settings` y restaurarla
+/// al reiniciar la app — ahí no tiene sentido guardar el `id` interno, que se reasigna desde 0
+/// cada vez que arranca el motor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueTrackInput {
     pub path: String,
     pub track_id: Option<i64>,

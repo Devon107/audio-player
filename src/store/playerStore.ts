@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { audio } from '../lib/tauri'
+import { audio, settings } from '../lib/tauri'
 import {
   onPlayerError,
   onPlayerLoaded,
@@ -16,7 +16,15 @@ const EMPTY_QUEUE: QueueSnapshot = {
   shuffle: false,
   repeat: 'off',
   has_previous: false,
+  duration_secs: null,
 }
+
+// Arrastrar el slider dispara `onChange` (y por lo tanto `setVolume`) muy seguido. La ganancia
+// real se aplica al toque para que se sienta responsivo, pero guardar en SQLite en cada evento
+// generaría el mismo lag que ya se vio con el ecualizador — así que solo la persistencia se
+// debounce, no el cambio de volumen en sí.
+const VOLUME_PERSIST_DEBOUNCE_MS = 300
+let pendingVolumeSave: ReturnType<typeof setTimeout> | undefined
 
 interface PlayerStore {
   queue: QueueSnapshot
@@ -73,7 +81,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       set({ isPlaying: false, positionSecs: 0 })
     })
     onPlayerQueueChanged((snapshot) => {
-      set({ queue: snapshot })
+      set({ queue: snapshot, durationSecs: snapshot.duration_secs })
       if (snapshot.current_id == null) {
         set({ isPlaying: false, positionSecs: 0, durationSecs: null })
       }
@@ -83,10 +91,23 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     })
 
     try {
+      // Si el motor restauró una cola guardada al arrancar, esto ya trae la pista actual y su
+      // duración — así la barra de reproducción muestra el último track escuchado, listo para
+      // reproducir, sin esperar a que el usuario toque nada.
       const snapshot = await audio.getQueueState()
-      set({ queue: snapshot })
+      set({ queue: snapshot, durationSecs: snapshot.duration_secs })
     } catch {
       // El motor de audio no respondió a tiempo: se sigue con la cola vacía por defecto.
+    }
+
+    try {
+      const savedVolume = await settings.getVolume()
+      if (savedVolume != null) {
+        set({ volume: savedVolume })
+        await audio.setVolume(volumePositionToGain(savedVolume))
+      }
+    } catch {
+      // Sin volumen guardado todavía (o falló la lectura): se queda con el valor por defecto.
     }
   },
 
@@ -147,6 +168,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   setVolume: async (volume) => {
     set({ volume })
     await audio.setVolume(volumePositionToGain(volume))
+
+    clearTimeout(pendingVolumeSave)
+    pendingVolumeSave = setTimeout(() => {
+      void settings.setVolume(volume)
+    }, VOLUME_PERSIST_DEBOUNCE_MS)
   },
 
   setShuffle: async (enabled) => {

@@ -51,6 +51,7 @@ pub fn run() {
             app.manage(audio::AudioEngineHandle::spawn(
                 app.handle().clone(),
                 eq_control.clone(),
+                db_handle.clone(),
             ));
             app.manage(eq_control);
             app.manage(db_handle);
@@ -103,6 +104,8 @@ pub fn run() {
             playlist::commands::import_playlist_m3u,
             settings::commands::get_language_preference,
             settings::commands::set_language_preference,
+            settings::commands::get_volume_preference,
+            settings::commands::set_volume_preference,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
